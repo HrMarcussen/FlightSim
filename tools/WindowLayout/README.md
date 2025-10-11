@@ -1,42 +1,49 @@
 ﻿# Window Layout
 
-Capture and apply window layouts for any Windows desktop apps (e.g., X-Plane, MSFS) using Win32 APIs.
-Per‑monitor DPI awareness is enabled where supported.
+Capture and apply window layouts for Windows desktop apps using Win32 APIs. Per‑monitor DPI awareness is enabled where supported.
 
 ## Requirements
 - Windows (uses `user32.dll` Win32 APIs)
 - PowerShell 5.1+ or PowerShell 7+
 - Optional: `Out-GridView` for GUI selection; falls back to console if unavailable
 
-## Usage
+## Usage (as a module)
 
-Capture a layout (prompts to select windows):
+Import the module from this folder and call the functions:
 
 ```powershell
-# Save to default path
-& ..\\WindowLayout.ps1 -Action capture
+Import-Module (Join-Path $PSScriptRoot 'WindowLayout.psd1')
 
-# Save to a specific path
-& ..\\WindowLayout.ps1 -Action capture -LayoutPath .\A321.json
+# Capture interactively to a specific file
+$layout = Join-Path $PSScriptRoot 'WindowLayout.json'
+$script:LayoutPath = $layout
+Enable-PerMonitorDpi
+Capture-Layout
+
+# Apply one or more layouts
+$script:LayoutPath = @(
+  Join-Path $PSScriptRoot 'WindowLayout.json',
+  'C:\\somewhere\\AnotherLayout.json'
+)
+Enable-PerMonitorDpi
+Apply-Layout
 ```
 
-Apply one or more layouts:
+## Usage (as a script)
 
 ```powershell
+# Capture with defaults
+.\WindowLayout.ps1 -Action capture
+
 # Apply from default path
-& ..\\WindowLayout.ps1 -Action apply
+.\WindowLayout.ps1 -Action apply
 
-# Apply from multiple JSON files
-& ..\\WindowLayout.ps1 -Action apply -LayoutPath .\A321.json, .\A346.json
+# Apply from specific files
+.\WindowLayout.ps1 -Action apply -LayoutPath .\WindowLayout.json, .\Another.json
 ```
 
-Additional options:
-- `-FirstOnly` on `Set-Window` to only move the first matched window.
-
-## Notes
-- Uses `EnumWindows`, `GetWindowText`, `GetWindowRect`, `SetWindowPos`, `ShowWindowAsync`.
+### Notes
+- Functions exported: `Enable-PerMonitorDpi`, `Get-OpenWindows`, `Set-Window`, `Select-WindowsInteractive`, `Capture-Layout`, `Apply-Layout`.
 - Skips zero-area windows when capturing to avoid hidden/minimized artifacts.
-- JSON parsing is wrapped in try/catch with clear warnings on errors.
 - Title suggestions trim common separators (e.g., ` - `, ` | `, `: `).
-
-
+- JSON parsing is wrapped in try/catch with warnings.
