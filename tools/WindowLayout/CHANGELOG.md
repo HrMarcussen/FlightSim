@@ -54,3 +54,14 @@ This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 ## 2025-10-11 (0.4.4)
 ### Added
 - Checkbox-based window picker (WinForms) in Select-WindowsInteractive; falls back to Out-GridView/console.
+
+## 2025-10-11 (0.4.9)
+### Fixed
+- Clean exports to approved verbs only even when importing .psm1 directly.
+- Remove dark-mode attempts; stabilize Forms picker and OGV defaults.
+- Ensure Cancel exits cleanly without fallback.
+- DPI-safe Forms dialog with bottom panel and Select All/Select None buttons.
+
+### Changed
+- Default picker is OGV; Forms can be used with -Picker Forms.
+- Updated documentation and manifest alignment.

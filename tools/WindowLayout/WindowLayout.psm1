@@ -226,12 +226,11 @@ function Show-WindowPickerCheckbox {
 function Select-WindowsInteractive {
   [CmdletBinding()]
   param(
-    [ValidateSet('OGV','Forms','Console','Auto')][string]$Picker = 'Auto',
-    [switch]$ForceLightTheme
+    [ValidateSet('OGV','Forms','Console')][string]$Picker = 'OGV'
   )
   $all = Get-OpenWindows | Sort-Object Title
 
-  if ($Picker -eq 'Forms') { $picked = Show-WindowPickerCheckbox -Items $all  } elseif ($Picker -eq 'OGV') { $picked = $null } else { $picked = Show-WindowPickerCheckbox -Items $all  }
+  if ($Picker -eq 'Forms') { $picked = Show-WindowPickerCheckbox -Items $all } elseif ($Picker -eq 'OGV') { $picked = $null } else { $picked = Show-WindowPickerCheckbox -Items $all }
   if ($picked -ne $null) { return $picked }
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
@@ -270,8 +269,7 @@ function Suggest-TitleLikeSimple([string]$title) {
 function Capture-Layout {
   [CmdletBinding()]
   param(
-    [ValidateSet('OGV','Forms','Console','Auto')][string]$Picker = 'Auto',
-    [switch]$ForceLightTheme
+    [ValidateSet('OGV','Forms','Console')][string]$Picker = 'OGV'
   )
   $picked = Select-WindowsInteractive -Picker $Picker 
   if (-not $picked -or $picked.Count -eq 0) {
@@ -365,4 +363,7 @@ function Export-WindowLayout {
   Enable-PerMonitorDpi
   Capture-Layout -Picker $Picker
 }
+
+
+Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Export-WindowLayout, Restore-WindowLayout
 
