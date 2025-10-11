@@ -186,7 +186,7 @@ function Select-WindowsInteractive {
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
   if ($ogv) {
-    $picked = $all | Out-GridView -Title "Select windows to capture, then click OK" -PassThru -Property Title,Class,X,Y,Width,Height
+    $picked = $all | Select-Object Title,Class,X,Y,Width,Height | Out-GridView -Title "Select windows to capture, then click OK" -PassThru
     if (-not $picked) { return @() }
     return $picked
   }
@@ -314,6 +314,7 @@ switch ($Action) {
   "capture" { Capture-Layout }
   "apply"   { Apply-Layout }
 }
+
 
 
 
