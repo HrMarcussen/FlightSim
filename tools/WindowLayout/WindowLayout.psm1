@@ -214,7 +214,7 @@ function Apply-Layout {
   }
 }
 
-function Save-WindowLayout {
+function Export-WindowLayout {
   [CmdletBinding()]
   param([string[]]$LayoutPath = 'WindowLayout.json')
   $script:LayoutPath = $LayoutPath
@@ -222,7 +222,7 @@ function Save-WindowLayout {
   Capture-Layout
 }
 
-function Apply-WindowLayout {
+function Restore-WindowLayout {
   [CmdletBinding()]
   param([string[]]$LayoutPath = 'WindowLayout.json')
   $script:LayoutPath = $LayoutPath
@@ -230,4 +230,8 @@ function Apply-WindowLayout {
   Apply-Layout
 }
 
-Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Select-WindowsInteractive, Capture-Layout, Apply-Layout, Save-WindowLayout, Apply-WindowLayout
+Set-Alias -Name Save-WindowLayout -Value Export-WindowLayout -Scope Local
+Set-Alias -Name Apply-WindowLayout -Value Restore-WindowLayout -Scope Local
+
+Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Select-WindowsInteractive, Export-WindowLayout, Restore-WindowLayout -Alias Save-WindowLayout, Apply-WindowLayout
+

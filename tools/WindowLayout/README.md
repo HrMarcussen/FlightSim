@@ -14,13 +14,13 @@ Capture and apply window layouts for Windows desktop apps using Win32 APIs. Perâ
 Import-Module (Join-Path $PSScriptRoot "WindowLayout.psd1")
 
 # Capture interactively to default path in current folder
-Save-WindowLayout
+Export-WindowLayout
 
 # Capture to specific file
-Save-WindowLayout -LayoutPath .\MyLayout.json
+Export-WindowLayout -LayoutPath .\MyLayout.json
 
 # Apply one or more layouts
-Apply-WindowLayout -LayoutPath .\MyLayout.json, .\OtherLayout.json
+Restore-WindowLayout -LayoutPath .\MyLayout.json, .\OtherLayout.json
 ```
 
 ## Usage (as a script)
@@ -37,8 +37,11 @@ Apply-WindowLayout -LayoutPath .\MyLayout.json, .\OtherLayout.json
 ```
 
 ### Notes
-- Functions exported: `Enable-PerMonitorDpi`, `Get-OpenWindows`, `Set-Window`, `Select-WindowsInteractive`, `Capture-Layout`, `Apply-Layout`.
+- Functions exported: `Enable-PerMonitorDpi`, `Get-OpenWindows`, `Set-Window`, `Select-WindowsInteractive`, `Export-WindowLayout`, `Restore-WindowLayout`.
 - Skips zero-area windows when capturing to avoid hidden/minimized artifacts.
 - Title suggestions trim common separators (e.g., ` - `, ` | `, `: `).
 - JSON parsing is wrapped in try/catch with warnings.
+
+
+> Legacy aliases: Save-WindowLayout, Apply-WindowLayout
 

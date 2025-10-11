@@ -29,3 +29,10 @@ This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 - New high-level commands: Save-WindowLayout and Apply-WindowLayout.
 - Updated manifest to export new commands.
 - Updated README with module command usage.
+
+## 2025-10-11 (0.4.1)
+### Changed
+- Use approved verbs: Export-WindowLayout and Restore-WindowLayout.
+- Provide legacy aliases: Save-WindowLayout, Apply-WindowLayout.
+### Changed
+- Remove export of unapproved verbs (Capture-Layout, Apply-Layout) to avoid import warnings; keep them internal.
