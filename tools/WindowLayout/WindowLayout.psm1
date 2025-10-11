@@ -1,4 +1,4 @@
-<#
+﻿<#
 WindowLayout PowerShell module
 Exports commands to capture and restore window layouts on Windows.
 #>
@@ -25,6 +25,7 @@ public static class Win32Native {
 
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern IntPtr SetProcessDpiAwarenessContext(IntPtr dpiContext);
+    [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
 
     public static readonly IntPtr HWND_TOP = IntPtr.Zero;
     public const uint SWP_NOZORDER = 0x0004;
@@ -119,9 +120,119 @@ function Set-Window {
   }
 }
 
+function Show-WindowPickerCheckbox {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][System.Collections.IEnumerable]$Items
+  )
+  try { Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop; Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch { return $null }
+
+  $scriptBlock = {
+    param($Items)
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'Select windows to capture'
+    $form.StartPosition = 'CenterScreen'
+    $form.Size = New-Object System.Drawing.Size (1100, 700)
+    $form.MinimumSize = New-Object System.Drawing.Size (900, 560)
+    $form.AutoScaleMode = 'Dpi'
+
+    $list = New-Object System.Windows.Forms.ListView
+    $list.View = 'Details'
+    $list.CheckBoxes = $true
+    $list.FullRowSelect = $true
+    $list.GridLines = $true
+    $list.Dock = 'Fill'
+
+    [void]$list.Columns.Add('Title', 500)
+    [void]$list.Columns.Add('Class', 240)
+    [void]$list.Columns.Add('Location', 160)
+    [void]$list.Columns.Add('Size', 160)
+
+    foreach ($it in $Items) {
+      $loc = '{0},{1}' -f $it.X, $it.Y
+      $siz = '{0}x{1}' -f $it.Width, $it.Height
+      $lv  = New-Object System.Windows.Forms.ListViewItem($it.Title)
+      [void]$lv.SubItems.Add($it.Class)
+      [void]$lv.SubItems.Add($loc)
+      [void]$lv.SubItems.Add($siz)
+      $lv.Tag = $it
+      [void]$list.Items.Add($lv)
+    }
+
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Dock = 'Bottom'
+    $panel.Height = 56
+
+    $btnAll = New-Object System.Windows.Forms.Button
+    $btnAll.Text = 'Select All'
+    $btnAll.AutoSize = $true
+    $btnAll.Location = New-Object System.Drawing.Point (12, 12)
+    $btnAll.Add_Click({ foreach($i in $list.Items){ $i.Checked = $true } })
+
+    $btnNone = New-Object System.Windows.Forms.Button
+    $btnNone.Text = 'Select None'
+    $btnNone.AutoSize = $true
+    $btnNone.Location = New-Object System.Drawing.Point (120, 12)
+    $btnNone.Add_Click({ foreach($i in $list.Items){ $i.Checked = $false } })
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = 'OK'
+    $btnOk.Size = New-Object System.Drawing.Size (75, 30)
+    $btnOk.Anchor = 'Bottom,Right'
+    $btnOk.Location = New-Object System.Drawing.Point (850, 12)
+    $btnOk.Add_Click({ $form.DialogResult = [System.Windows.Forms.DialogResult]::OK; $form.Close() })
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = 'Cancel'
+    $btnCancel.Size = New-Object System.Drawing.Size (75, 30)
+    $btnCancel.Anchor = 'Bottom,Right'
+    $btnCancel.Location = New-Object System.Drawing.Point (930, 12)
+    $btnCancel.Add_Click({ $form.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; $form.Close() })
+
+    $form.Add_Resize({
+      $btnOk.Location = New-Object System.Drawing.Point ($form.ClientSize.Width - 190, 12)
+      $btnCancel.Location = New-Object System.Drawing.Point ($form.ClientSize.Width - 100, 12)
+    })
+
+    $panel.Controls.AddRange(@($btnAll,$btnNone,$btnOk,$btnCancel))
+    $form.Controls.Add($list)
+    $form.Controls.Add($panel)
+    $form.AcceptButton = $btnOk
+    $form.CancelButton = $btnCancel
+
+    $dlg = $form.ShowDialog()
+    if ($dlg -ne [System.Windows.Forms.DialogResult]::OK) { return @() }
+    $checked = @()
+    foreach($i in $list.Items){ if($i.Checked){ $checked += $i.Tag } }
+    return ,$checked
+  }
+
+  if ([System.Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
+    $result = New-Object System.Collections.ArrayList
+    $t = New-Object System.Threading.Thread({ param($s)
+      $sb=$s[0]; $items=$s[1]; $out=$s[2]
+      $res = & $sb $items
+      if ($res -ne $null) { [void]$out.AddRange(@($res)) }
+    })
+    $t.SetApartmentState('STA'); $t.IsBackground = $true
+    $t.Start(@($scriptBlock, $Items, $result))
+    $t.Join()
+    return @($result.ToArray())
+  } else {
+    return & $scriptBlock $Items
+  }
+}
+
 function Select-WindowsInteractive {
-  [CmdletBinding()] param()
+  [CmdletBinding()]
+  param(
+    [ValidateSet('OGV','Forms','Console','Auto')][string]$Picker = 'Auto',
+    [switch]$ForceLightTheme
+  )
   $all = Get-OpenWindows | Sort-Object Title
+
+  if ($Picker -eq 'Forms') { $picked = Show-WindowPickerCheckbox -Items $all  } elseif ($Picker -eq 'OGV') { $picked = $null } else { $picked = Show-WindowPickerCheckbox -Items $all  }
+  if ($picked -ne $null) { return $picked }
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
   if ($ogv) {
@@ -157,8 +268,12 @@ function Suggest-TitleLikeSimple([string]$title) {
 }
 
 function Capture-Layout {
-  [CmdletBinding()] param()
-  $picked = Select-WindowsInteractive
+  [CmdletBinding()]
+  param(
+    [ValidateSet('OGV','Forms','Console','Auto')][string]$Picker = 'Auto',
+    [switch]$ForceLightTheme
+  )
+  $picked = Select-WindowsInteractive -Picker $Picker 
   if (-not $picked -or $picked.Count -eq 0) {
     Write-Warning "Nothing selected."
     return
@@ -242,22 +357,12 @@ function Apply-Layout {
 
 function Export-WindowLayout {
   [CmdletBinding(SupportsShouldProcess=$true)]
-  param([Parameter()][ValidateNotNullOrEmpty()][string[]]$LayoutPath = "WindowLayout.json")
+  param(
+    [Parameter()][ValidateNotNullOrEmpty()][string[]]$LayoutPath = "WindowLayout.json",
+    [ValidateSet('OGV','Forms','Console')][string]$Picker = 'OGV'
+  )
   $script:LayoutPath = $LayoutPath
   Enable-PerMonitorDpi
-  Capture-Layout
+  Capture-Layout -Picker $Picker
 }
-
-function Restore-WindowLayout {
-  [CmdletBinding(SupportsShouldProcess=$true)]
-  param([Parameter()][ValidateNotNullOrEmpty()][string[]]$LayoutPath = "WindowLayout.json")
-  $script:LayoutPath = $LayoutPath
-  Enable-PerMonitorDpi
-  Apply-Layout
-}
-
-Set-Alias -Name Save-WindowLayout -Value Export-WindowLayout -Scope Local
-Set-Alias -Name Apply-WindowLayout -Value Restore-WindowLayout -Scope Local
-
-Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Select-WindowsInteractive, Export-WindowLayout, Restore-WindowLayout -Alias Save-WindowLayout, Apply-WindowLayout
 

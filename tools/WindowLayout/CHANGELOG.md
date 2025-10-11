@@ -50,3 +50,7 @@ This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 
 ### Changed
 - More verbose diagnostics via Write-Verbose; improved warnings on skips.
+
+## 2025-10-11 (0.4.4)
+### Added
+- Checkbox-based window picker (WinForms) in Select-WindowsInteractive; falls back to Out-GridView/console.
