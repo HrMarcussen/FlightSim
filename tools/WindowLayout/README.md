@@ -9,24 +9,18 @@ Capture and apply window layouts for Windows desktop apps using Win32 APIs. Perâ
 
 ## Usage (as a module)
 
-Import the module from this folder and call the functions:
-
 ```powershell
-Import-Module (Join-Path $PSScriptRoot 'WindowLayout.psd1')
+# Import module
+Import-Module (Join-Path $PSScriptRoot "WindowLayout.psd1")
 
-# Capture interactively to a specific file
-$layout = Join-Path $PSScriptRoot 'WindowLayout.json'
-$script:LayoutPath = $layout
-Enable-PerMonitorDpi
-Capture-Layout
+# Capture interactively to default path in current folder
+Save-WindowLayout
+
+# Capture to specific file
+Save-WindowLayout -LayoutPath .\MyLayout.json
 
 # Apply one or more layouts
-$script:LayoutPath = @(
-  Join-Path $PSScriptRoot 'WindowLayout.json',
-  'C:\\somewhere\\AnotherLayout.json'
-)
-Enable-PerMonitorDpi
-Apply-Layout
+Apply-WindowLayout -LayoutPath .\MyLayout.json, .\OtherLayout.json
 ```
 
 ## Usage (as a script)
@@ -47,3 +41,4 @@ Apply-Layout
 - Skips zero-area windows when capturing to avoid hidden/minimized artifacts.
 - Title suggestions trim common separators (e.g., ` - `, ` | `, `: `).
 - JSON parsing is wrapped in try/catch with warnings.
+

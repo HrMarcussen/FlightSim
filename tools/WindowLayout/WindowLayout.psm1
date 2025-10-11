@@ -1,4 +1,4 @@
-# WindowLayout PowerShell module
+﻿# WindowLayout PowerShell module
 Add-Type -TypeDefinition @"
 using System;
 using System.Text;
@@ -214,5 +214,20 @@ function Apply-Layout {
   }
 }
 
-Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Select-WindowsInteractive, Capture-Layout, Apply-Layout
+function Save-WindowLayout {
+  [CmdletBinding()]
+  param([string[]]$LayoutPath = 'WindowLayout.json')
+  $script:LayoutPath = $LayoutPath
+  Enable-PerMonitorDpi
+  Capture-Layout
+}
 
+function Apply-WindowLayout {
+  [CmdletBinding()]
+  param([string[]]$LayoutPath = 'WindowLayout.json')
+  $script:LayoutPath = $LayoutPath
+  Enable-PerMonitorDpi
+  Apply-Layout
+}
+
+Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Select-WindowsInteractive, Capture-Layout, Apply-Layout, Save-WindowLayout, Apply-WindowLayout

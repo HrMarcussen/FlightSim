@@ -23,3 +23,9 @@ This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 - Rename folder to 	ools/WindowLayout/ and script to WindowLayout.ps1.
 - Generalize OGV prompt; remove ToLiss mentions.
 
+
+## 2025-10-11 (0.4.0)
+### Added
+- New high-level commands: Save-WindowLayout and Apply-WindowLayout.
+- Updated manifest to export new commands.
+- Updated README with module command usage.
