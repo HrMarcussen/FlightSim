@@ -18,3 +18,9 @@ This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 
 ### Removed
 - Obsolete regex-based `Suggest-TitleLike` helper.
+
+## Unreleased
+### Changed
+- Generalize references from ToLiss-specific to generic Windows apps.
+- Default layout filename changed to WindowLayout.json.
+- Out-GridView prompt generalized.

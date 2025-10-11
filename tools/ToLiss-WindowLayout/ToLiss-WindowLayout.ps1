@@ -1,7 +1,7 @@
-﻿# Toliss-WindowLayout.ps1
+﻿# WindowLayout.ps1
 <#
 .SYNOPSIS
-Captures and applies window layouts for ToLiss/FlightSim (or any app).
+Captures and applies window layouts for any Windows desktop apps (e.g., X-Plane, MSFS).
 
 .DESCRIPTION
 Enumerates visible top-level windows and saves their positions/sizes to JSON,
@@ -14,19 +14,18 @@ For capture, if multiple are provided, the first is used.
 .PARAMETER Action
 "capture" to interactively select and save windows; "apply" to position windows from JSON.
 
-.EXAMPLE
-PS> .\ToLiss-WindowLayout.ps1 -Action capture
-Interactively select open windows and save layout to .\TolissWindowLayout.json
+EXAMPLE
+PS> .\WindowLayout.ps1 -Action capture
+Interactively select open windows and save layout to WindowLayout.json
 
 .EXAMPLE
-PS> .\ToLiss-WindowLayout.ps1 -Action apply
-Apply positions/sizes from .\TolissWindowLayout.json
+PS> .\WindowLayout.ps1 -Action apply
+Apply positions/sizes from WindowLayout.json
 #>
 param(
-  [string[]]$LayoutPath = ".\TolissWindowLayout.json",
+  [string[]]$LayoutPath = "WindowLayout.json",
   [ValidateSet("capture","apply")] [string]$Action = "capture"
 )
-
 # --- Single, self-contained type (no duplicate 'using' issues) ---
 $code = @"
 using System;
@@ -184,7 +183,7 @@ function Select-WindowsInteractive {
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
   if ($ogv) {
-    $picked = $all | Out-GridView -Title "Select Toliss (and other) windows, then click OK" -PassThru -Property Title,Class,X,Y,Width,Height
+    $picked = $all | Out-GridView -Title "Select windows to capture, then click OK" -PassThru -Property Title,Class,X,Y,Width,Height
     if (-not $picked) { return @() }
     return $picked
   }
@@ -257,7 +256,7 @@ function Capture-Layout {
     if ($LayoutPath.Count -gt 0) {
       if ($LayoutPath.Count -gt 1) { Write-Warning "Multiple LayoutPath values provided; using first: $($LayoutPath[0])" }
       $LayoutPath[0]
-    } else { ".\\TolissWindowLayout.json" }
+    } else { ".\\WindowLayout.json" }
   } else { $LayoutPath }
   $layout | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $targetPath
   Write-Host "Saved layout ($($layout.Count) entries) -> $targetPath"
@@ -312,3 +311,4 @@ switch ($Action) {
   "capture" { Capture-Layout }
   "apply"   { Apply-Layout }
 }
+

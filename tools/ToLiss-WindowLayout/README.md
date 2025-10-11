@@ -1,6 +1,6 @@
-﻿# ToLiss Window Layout (PowerShell)
+﻿# Window Layout (PowerShell)
 
-Capture and apply window layouts for ToLiss/FlightSim (or any app) using Win32 APIs.
+Capture and apply window layouts for any Windows desktop apps (e.g., X-Plane, MSFS) using Win32 APIs.
 Per‑monitor DPI awareness is enabled where supported.
 
 ## Requirements
@@ -14,20 +14,20 @@ Capture a layout (prompts to select windows):
 
 ```powershell
 # Save to default path
-.\ToLiss-WindowLayout.ps1 -Action capture
+& $PSCommandPath -Action capture
 
 # Save to a specific path
-.\ToLiss-WindowLayout.ps1 -Action capture -LayoutPath .\Toliss-A321.json
+& $PSCommandPath -Action capture -LayoutPath .\A321.json
 ```
 
 Apply one or more layouts:
 
 ```powershell
 # Apply from default path
-.\ToLiss-WindowLayout.ps1 -Action apply
+& $PSCommandPath -Action apply
 
 # Apply from multiple JSON files
-.\ToLiss-WindowLayout.ps1 -Action apply -LayoutPath .\Toliss-A321.json, .\Toliss-A346.json
+& $PSCommandPath -Action apply -LayoutPath .\A321.json, .\A346.json
 ```
 
 Additional options:
@@ -38,3 +38,4 @@ Additional options:
 - Skips zero-area windows when capturing to avoid hidden/minimized artifacts.
 - JSON parsing is wrapped in try/catch with clear warnings on errors.
 - Title suggestions trim common separators (e.g., ` - `, ` | `, `: `).
+
