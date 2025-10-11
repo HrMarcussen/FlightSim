@@ -1,4 +1,10 @@
 ﻿# WindowLayout PowerShell module
+
+Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Select-WindowsInteractive, Export-WindowLayout, Restore-WindowLayout -Alias Save-WindowLayout, Apply-WindowLayout
+$typeLoaded = $true; try { [void][Win32Native] } catch { $typeLoaded = $false }; if (-not $typeLoaded) {
+
+}
+# WindowLayout PowerShell module
 Add-Type -TypeDefinition @"
 using System;
 using System.Text;

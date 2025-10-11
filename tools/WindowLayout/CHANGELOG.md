@@ -36,3 +36,7 @@ This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 - Provide legacy aliases: Save-WindowLayout, Apply-WindowLayout.
 ### Changed
 - Remove export of unapproved verbs (Capture-Layout, Apply-Layout) to avoid import warnings; keep them internal.
+
+## 2025-10-11 (0.4.2)
+### Fixed
+- Guard Add-Type in module to avoid TYPE_ALREADY_EXISTS on re-import.
