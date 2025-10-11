@@ -1,40 +1,16 @@
-﻿# ToLiss Window Layout (PowerShell)
+﻿# FlightSim Utilities
 
-Capture and apply window layouts for ToLiss/FlightSim (or any app) using Win32 APIs.
-Per‑monitor DPI awareness is enabled where supported.
+A collection of small PowerShell utilities for flight simulation workflows.
+Each tool lives in its own folder under `tools/` with its own README and changelog.
 
-## Requirements
-- Windows (uses `user32.dll` Win32 APIs)
-- PowerShell 5.1+ or PowerShell 7+
-- Optional: `Out-GridView` for GUI selection; falls back to console if unavailable
+## Tools
 
-## Usage
+- [ToLiss Window Layout](tools/ToLiss-WindowLayout/) — capture and apply window layouts for ToLiss/FlightSim (or any app) via Win32 APIs.
 
-Capture a layout (prompts to select windows):
+## Getting Started
+- Navigate to the tool folder you want, read its README, and run the script(s) from there.
+- Requires Windows for Win32 API calls and PowerShell 5.1+ or PowerShell 7+.
 
-```powershell
-# Save to default path
-.\ToLiss-WindowLayout.ps1 -Action capture
-
-# Save to a specific path
-.\ToLiss-WindowLayout.ps1 -Action capture -LayoutPath .\Toliss-A321.json
-```
-
-Apply one or more layouts:
-
-```powershell
-# Apply from default path
-.\ToLiss-WindowLayout.ps1 -Action apply
-
-# Apply from multiple JSON files
-.\ToLiss-WindowLayout.ps1 -Action apply -LayoutPath .\Toliss-A321.json, .\Toliss-A346.json
-```
-
-Additional options:
-- `-FirstOnly` on `Set-Window` to only move the first matched window.
-
-## Notes
-- Uses `EnumWindows`, `GetWindowText`, `GetWindowRect`, `SetWindowPos`, `ShowWindowAsync`.
-- Skips zero-area windows when capturing to avoid hidden/minimized artifacts.
-- JSON parsing is wrapped in try/catch with clear warnings on errors.
-- Title suggestions trim common separators (e.g., ` - `, ` | `, `: `).
+## Conventions
+- Per-tool READMEs and CHANGELOGs live alongside code in each tool folder.
+- Keep changes focused and minimal; prefer ASCII in docs and code comments.
