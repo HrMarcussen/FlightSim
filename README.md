@@ -5,7 +5,7 @@ Each tool lives in its own folder under `tools/` with its own README and changel
 
 ## Tools
 
-- [Window Layout](tools/ToLiss-WindowLayout/) - capture and apply window layouts for Windows desktop apps via Win32 APIs. — capture and apply window layouts for ToLiss/FlightSim (or any app) via Win32 APIs.
+- [Window Layout](tools/WindowLayout/) - capture and apply window layouts for Windows desktop apps via Win32 APIs. — capture and apply window layouts for ToLiss/FlightSim (or any app) via Win32 APIs.
 
 ## Getting Started
 - Navigate to the tool folder you want, read its README, and run the script(s) from there.
@@ -14,4 +14,5 @@ Each tool lives in its own folder under `tools/` with its own README and changel
 ## Conventions
 - Per-tool READMEs and CHANGELOGs live alongside code in each tool folder.
 - Keep changes focused and minimal; prefer ASCII in docs and code comments.
+
 

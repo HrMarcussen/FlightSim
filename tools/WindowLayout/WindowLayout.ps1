@@ -3,6 +3,9 @@
 .SYNOPSIS
 Captures and applies window layouts for any Windows desktop apps (e.g., X-Plane, MSFS).
 
+.VERSION
+0.2.0
+
 .DESCRIPTION
 Enumerates visible top-level windows and saves their positions/sizes to JSON,
 then restores them using Win32 APIs. Includes best-effort per-monitor DPI awareness.
@@ -14,7 +17,7 @@ For capture, if multiple are provided, the first is used.
 .PARAMETER Action
 "capture" to interactively select and save windows; "apply" to position windows from JSON.
 
-EXAMPLE
+.EXAMPLE
 PS> .\WindowLayout.ps1 -Action capture
 Interactively select open windows and save layout to WindowLayout.json
 
@@ -311,4 +314,6 @@ switch ($Action) {
   "capture" { Capture-Layout }
   "apply"   { Apply-Layout }
 }
+
+
 

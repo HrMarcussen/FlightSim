@@ -1,4 +1,4 @@
-﻿# Window Layout (PowerShell)
+﻿# Window Layout
 
 Capture and apply window layouts for any Windows desktop apps (e.g., X-Plane, MSFS) using Win32 APIs.
 Per‑monitor DPI awareness is enabled where supported.
@@ -14,20 +14,20 @@ Capture a layout (prompts to select windows):
 
 ```powershell
 # Save to default path
-& $PSCommandPath -Action capture
+& ..\\WindowLayout.ps1 -Action capture
 
 # Save to a specific path
-& $PSCommandPath -Action capture -LayoutPath .\A321.json
+& ..\\WindowLayout.ps1 -Action capture -LayoutPath .\A321.json
 ```
 
 Apply one or more layouts:
 
 ```powershell
 # Apply from default path
-& $PSCommandPath -Action apply
+& ..\\WindowLayout.ps1 -Action apply
 
 # Apply from multiple JSON files
-& $PSCommandPath -Action apply -LayoutPath .\A321.json, .\A346.json
+& ..\\WindowLayout.ps1 -Action apply -LayoutPath .\A321.json, .\A346.json
 ```
 
 Additional options:
@@ -38,4 +38,5 @@ Additional options:
 - Skips zero-area windows when capturing to avoid hidden/minimized artifacts.
 - JSON parsing is wrapped in try/catch with clear warnings on errors.
 - Title suggestions trim common separators (e.g., ` - `, ` | `, `: `).
+
 

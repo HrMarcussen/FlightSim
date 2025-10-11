@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file.
 This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 
-## Unreleased
+## 2025-10-11 (0.2.0)
 ### Added
 - Comment-based help for script and functions.
 - Support for multiple `-LayoutPath` values on `apply` (applies each provided file).
@@ -19,8 +19,12 @@ This format follows Keep a Changelog, and dates use ISO 8601 (YYYY-MM-DD).
 ### Removed
 - Obsolete regex-based `Suggest-TitleLike` helper.
 
-## Unreleased
+## 2025-10-11 (0.2.0)
 ### Changed
 - Generalize references from ToLiss-specific to generic Windows apps.
 - Default layout filename changed to WindowLayout.json.
 - Out-GridView prompt generalized.
+
+### Changed
+- Rename folder to tools/WindowLayout/ and script to WindowLayout.ps1.
+
