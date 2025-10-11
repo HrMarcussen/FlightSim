@@ -1,11 +1,12 @@
-﻿# WindowLayout PowerShell module
+<#
+WindowLayout PowerShell module
+Exports commands to capture and restore window layouts on Windows.
+#>
 
-Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Select-WindowsInteractive, Export-WindowLayout, Restore-WindowLayout -Alias Save-WindowLayout, Apply-WindowLayout
-$typeLoaded = $true; try { [void][Win32Native] } catch { $typeLoaded = $false }; if (-not $typeLoaded) {
-
-}
-# WindowLayout PowerShell module
-Add-Type -TypeDefinition @"
+# Guard native type definition so re-imports are safe
+$__typeLoaded = $true; try { [void][Win32Native] } catch { $__typeLoaded = $false }
+if (-not $__typeLoaded) {
+  Add-Type -TypeDefinition @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
@@ -34,15 +35,17 @@ public static class Win32Native {
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 }
 "@ -Language CSharp
+}
 
 function Enable-PerMonitorDpi {
+  [CmdletBinding()] param()
   try { [void][Win32Native]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) } catch {
     try { [void][Win32Native]::SetProcessDPIAware() } catch {}
   }
 }
 
 function Get-OpenWindows {
-  param([switch]$VisibleOnly = $true)
+  [CmdletBinding()] param([switch]$VisibleOnly = $true)
   $list = New-Object System.Collections.Generic.List[object]
   [Win32Native]::EnumWindows({
     param([IntPtr]$h, [IntPtr]$p)
@@ -80,14 +83,15 @@ function Get-OpenWindows {
 }
 
 function Set-Window {
+  [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Medium')]
   param(
-    [Parameter(Mandatory)] [string]$TitleLike,
-    [Parameter(Mandatory)] [int]$X,
-    [Parameter(Mandatory)] [int]$Y,
-    [Parameter(Mandatory)] [int]$Width,
-    [Parameter(Mandatory)] [int]$Height,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$TitleLike,
+    [Parameter(Mandatory)][int]$X,
+    [Parameter(Mandatory)][int]$Y,
+    [Parameter(Mandatory)][ValidateRange(1,[int]::MaxValue)][int]$Width,
+    [Parameter(Mandatory)][ValidateRange(1,[int]::MaxValue)][int]$Height,
     [switch]$FirstOnly,
-    [int]$TimeoutSec = 20
+    [ValidateRange(1,600)][int]$TimeoutSec = 20
   )
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
   do {
@@ -105,15 +109,18 @@ function Set-Window {
   }
 
   foreach ($t in $targets) {
-    [void][Win32Native]::ShowWindowAsync($t.Handle, [Win32Native]::SW_RESTORE)
-    $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $X, $Y, $Width, $Height,
-      [Win32Native]::SWP_NOZORDER -bor [Win32Native]::SWP_NOACTIVATE)
-    if ($ok) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
-    else     { Write-Warning "Failed to position '$($t.Title)'." }
+    if ($PSCmdlet.ShouldProcess($t.Title, "Move+Resize to $X,$Y ${Width}x${Height}")) {
+      [void][Win32Native]::ShowWindowAsync($t.Handle, [Win32Native]::SW_RESTORE)
+      $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $X, $Y, $Width, $Height,
+        [Win32Native]::SWP_NOZORDER -bor [Win32Native]::SWP_NOACTIVATE)
+      if ($ok) { Write-Verbose ("Placed '{0}' -> {1},{2} {3}x{4}" -f $t.Title,$X,$Y,$Width,$Height) }
+      else     { Write-Warning "Failed to position '$($t.Title)'." }
+    }
   }
 }
 
 function Select-WindowsInteractive {
+  [CmdletBinding()] param()
   $all = Get-OpenWindows | Sort-Object Title
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
@@ -141,7 +148,6 @@ function Get-AsciiSeparators { @(' - ', ' | ', ': ') }
 
 function Suggest-TitleLikeSimple([string]$title) {
   if ([string]::IsNullOrWhiteSpace($title)) { return "" }
-  $separators = @(' - ', ' | ', ': ')
   foreach ($sep in (Get-AsciiSeparators)) {
     $idx = $title.IndexOf($sep)
     if ($idx -gt 0) { return $title.Substring(0, $idx).Trim() }
@@ -151,6 +157,7 @@ function Suggest-TitleLikeSimple([string]$title) {
 }
 
 function Capture-Layout {
+  [CmdletBinding()] param()
   $picked = Select-WindowsInteractive
   if (-not $picked -or $picked.Count -eq 0) {
     Write-Warning "Nothing selected."
@@ -179,11 +186,20 @@ function Capture-Layout {
     } else { "WindowLayout.json" }
   } else { $script:LayoutPath }
   if (-not $targetPath) { $targetPath = "WindowLayout.json" }
-  $layout | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $targetPath
-  Write-Host "Saved layout ($($layout.Count) entries) -> $targetPath"
+
+  try {
+    $dir = Split-Path -Path $targetPath -Parent
+    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $layout | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $targetPath
+    Write-Verbose ("Saved layout to {0}" -f $targetPath)
+    Write-Host "Saved layout ($($layout.Count) entries) -> $targetPath"
+  } catch {
+    Write-Error "Failed to write layout '$targetPath': $($_.Exception.Message)"
+  }
 }
 
 function Apply-Layout {
+  [CmdletBinding()] param()
   $paths = @($script:LayoutPath)
   if (-not $paths -or $paths.Count -eq 0) {
     Write-Warning "No layout path(s) provided."
@@ -208,7 +224,11 @@ function Apply-Layout {
     }
     $count = 0
     foreach ($w in $layout) {
-      Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20
+      if (-not $w.TitleLike) { Write-Warning "Missing TitleLike in entry; skipping."; continue }
+      try { $x=[int]$w.X; $y=[int]$w.Y; $wth=[int]$w.Width; $hgt=[int]$w.Height }
+      catch { Write-Warning "Invalid numeric values in entry for '$($w.TitleLike)'; skipping."; continue }
+      if ($wth -le 0 -or $hgt -le 0) { Write-Warning "Non-positive size for '$($w.TitleLike)'; skipping."; continue }
+      Set-Window -TitleLike $w.TitleLike -X $x -Y $y -Width $wth -Height $hgt -TimeoutSec 20
       $count++
     }
     $totalApplied += $count
@@ -221,16 +241,16 @@ function Apply-Layout {
 }
 
 function Export-WindowLayout {
-  [CmdletBinding()]
-  param([string[]]$LayoutPath = 'WindowLayout.json')
+  [CmdletBinding(SupportsShouldProcess=$true)]
+  param([Parameter()][ValidateNotNullOrEmpty()][string[]]$LayoutPath = "WindowLayout.json")
   $script:LayoutPath = $LayoutPath
   Enable-PerMonitorDpi
   Capture-Layout
 }
 
 function Restore-WindowLayout {
-  [CmdletBinding()]
-  param([string[]]$LayoutPath = 'WindowLayout.json')
+  [CmdletBinding(SupportsShouldProcess=$true)]
+  param([Parameter()][ValidateNotNullOrEmpty()][string[]]$LayoutPath = "WindowLayout.json")
   $script:LayoutPath = $LayoutPath
   Enable-PerMonitorDpi
   Apply-Layout
