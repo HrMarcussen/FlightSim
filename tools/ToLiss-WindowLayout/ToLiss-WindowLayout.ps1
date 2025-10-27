@@ -12,7 +12,7 @@ Path(s) to JSON layout file(s) to read or write.
 For capture, if multiple are provided, the first is used.
 
 .PARAMETER Action
-"capture" to interactively select and save windows; "apply" to position windows from JSON.
+"capture" to interactively select and save windows; "apply" to position windows from JSON and optionally start black border overlays per entry.
 
 EXAMPLE
 PS> .\WindowLayout.ps1 -Action capture
@@ -24,7 +24,7 @@ Apply positions/sizes from WindowLayout.json
 #>
 param(
   [string[]]$LayoutPath = "WindowLayout.json",
-  [ValidateSet("capture","apply")] [string]$Action = "capture"
+  [ValidateSet("capture","apply","overlays","stop-overlays")] [string]$Action = "capture"
 )
 # --- Single, self-contained type (no duplicate 'using' issues) ---
 $code = @"
@@ -68,6 +68,12 @@ function Enable-PerMonitorDpi {
   try { [void][Win32Native]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) } catch {
     try { [void][Win32Native]::SetProcessDPIAware() } catch {}
   }
+}
+
+# Script directory for locating helper scripts (PS5.1-safe)
+if (-not $script:ToolDir) {
+  if ($PSCommandPath) { $script:ToolDir = Split-Path -Parent $PSCommandPath }
+  if (-not $script:ToolDir) { $script:ToolDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
 }
 
 <#
@@ -183,7 +189,9 @@ function Select-WindowsInteractive {
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
   if ($ogv) {
-    $picked = $all | Out-GridView -Title "Select windows to capture, then click OK" -PassThru -Property Title,Class,X,Y,Width,Height
+    $picked = $all |
+      Select-Object Title,Class,X,Y,Width,Height |
+      Out-GridView -Title "Select windows to capture, then click OK" -PassThru
     if (-not $picked) { return @() }
     return $picked
   }
@@ -249,6 +257,10 @@ function Capture-Layout {
       Y         = [int]$w.Y
       Width     = [int]$w.Width
       Height    = [int]$w.Height
+      BorderThickness = 8
+      BorderTopExtra  = 0
+      StripTitleBar   = $false
+      Follow          = $true
     }
   }
 
@@ -260,6 +272,58 @@ function Capture-Layout {
   } else { $LayoutPath }
   $layout | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $targetPath
   Write-Host "Saved layout ($($layout.Count) entries) -> $targetPath"
+}
+
+<#
+.SYNOPSIS
+Start a black border overlay process for a layout entry if configured.
+#>
+function Start-OverlayForEntry {
+  param([Parameter(Mandatory)]$Entry)
+  $toolDir = $script:ToolDir
+  if (-not $toolDir) { $toolDir = Split-Path -Parent $PSCommandPath }
+  $overlayScript = if ($toolDir) { Join-Path $toolDir 'Add-BlackBorderOverlay.ps1' } else { $null }
+  if (-not (Test-Path $overlayScript)) { return }
+
+  # PS5.1-compatible null/exists checks (no '??' operator)
+  $th = 0
+  if ($Entry.PSObject.Properties.Match('BorderThickness').Count -gt 0 -and $null -ne $Entry.BorderThickness) {
+    $th = [int]$Entry.BorderThickness
+  }
+  $tx = 0
+  if ($Entry.PSObject.Properties.Match('BorderTopExtra').Count -gt 0 -and $null -ne $Entry.BorderTopExtra) {
+    $tx = [int]$Entry.BorderTopExtra
+  }
+  $st = $false
+  if ($Entry.PSObject.Properties.Match('StripTitleBar').Count -gt 0 -and $null -ne $Entry.StripTitleBar) {
+    $st = [bool]$Entry.StripTitleBar
+  }
+  $fw = $true
+  if ($Entry.PSObject.Properties.Match('Follow').Count -gt 0 -and $null -ne $Entry.Follow) {
+    $fw = [bool]$Entry.Follow
+  }
+
+  if ($th -le 0 -and -not $st) { return }
+  if ([string]::IsNullOrWhiteSpace($Entry.TitleLike)) { return }
+
+  $args = @(
+    '-NoProfile','-ExecutionPolicy','Bypass','-File',"$overlayScript",
+    '-TitleLike',"$($Entry.TitleLike)",
+    '-Thickness',"$th",
+    '-TopExtra',"$tx",
+    '-TimeoutSec','30'
+  )
+  if ($st) { $args += '-StripTitleBar' }
+  if ($fw) { $args += '-Follow' }
+
+  # Build a single argument string for robust quoting on PS5.1
+  $argString = @()
+  foreach ($a in $args) {
+    if ($a -match '\s') { $argString += ('"' + $a + '"') } else { $argString += $a }
+  }
+  $argString = ($argString -join ' ')
+
+  Start-Process -FilePath 'powershell.exe' -ArgumentList $argString -WindowStyle Hidden -WorkingDirectory $toolDir | Out-Null
 }
 
 <#
@@ -294,6 +358,7 @@ function Apply-Layout {
     $count = 0
     foreach ($w in $layout) {
       Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20
+      Start-OverlayForEntry -Entry $w
       $count++
     }
     $totalApplied += $count
@@ -305,10 +370,40 @@ function Apply-Layout {
   }
 }
 
+<#
+.SYNOPSIS
+Launch overlays only from a layout without moving windows.
+#>
+function Apply-OverlaysOnly {
+  $paths = @($LayoutPath)
+  if (-not $paths -or $paths.Count -eq 0) { return }
+  foreach ($path in $paths) {
+    if (-not (Test-Path $path)) { continue }
+    try { $layout = Get-Content -Path $path -Raw | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+    foreach ($w in $layout) { Start-OverlayForEntry -Entry $w }
+  }
+}
+
+<#
+.SYNOPSIS
+Stop all running black border overlay processes.
+#>
+function Stop-AllOverlays {
+  $procs = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*Add-BlackBorderOverlay.ps1*' }
+  if ($procs) {
+    $procs | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }
+    Write-Host "Stopped $($procs.Count) overlay process(es)."
+  } else {
+    Write-Host "No overlay processes found."
+  }
+}
+
 # --- MAIN ---
 Enable-PerMonitorDpi
 switch ($Action) {
   "capture" { Capture-Layout }
   "apply"   { Apply-Layout }
+  "overlays" { Apply-OverlaysOnly }
+  "stop-overlays" { Stop-AllOverlays }
 }
 
