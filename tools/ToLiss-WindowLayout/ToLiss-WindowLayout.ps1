@@ -159,7 +159,8 @@ function Set-Window {
     [Parameter(Mandatory)] [int]$Width,
     [Parameter(Mandatory)] [int]$Height,
     [switch]$FirstOnly,
-    [int]$TimeoutSec = 20
+    [int]$TimeoutSec = 20,
+    [switch]$Quiet
   )
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
   do {
@@ -208,8 +209,10 @@ function Set-Window {
       }
     } while ($attempt -lt 4)
 
-    if ($placed) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
-    else         { Write-Warning "Failed to precisely size '$($t.Title)' (tried $attempt)." }
+    if (-not $Quiet) {
+      if ($placed) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
+      else         { Write-Warning "Failed to precisely size '$($t.Title)' (tried $attempt)." }
+    }
   }
 }
 
@@ -390,13 +393,23 @@ function Apply-Layout {
     }
     $count = 0
     $entries = @($layout)
+    $wasStripped = @{}
+    $reapplyCount = @{}
     # Phase 1: position all windows first
     foreach ($w in $entries) {
-      Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20
+      Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20 -Quiet
       $count++
     }
     # Phase 2: start overlays (may strip title bars)
-    foreach ($w in $entries) { Start-OverlayForEntry -Entry $w }
+    foreach ($w in $entries) {
+      Start-OverlayForEntry -Entry $w
+      $key = "${($w.TitleLike)}"
+      $wasStripped[$key] = $false
+      if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
+        try { if ([bool]$w.StripTitleBar) { $wasStripped[$key] = $true } } catch {}
+      }
+      $reapplyCount[$key] = 0
+    }
     # Phase 3: if any stripped, re-apply final bounds to match JSON exactly
     $needsReapply = $false
     foreach ($w in $entries) {
@@ -413,13 +426,21 @@ function Apply-Layout {
           if (-not $isStripped) { continue }
           for ($i=0; $i -lt 3; $i++) {
             Start-Sleep -Milliseconds (200 + ($i*200))
-            Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10
+            Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -Quiet
+            $reapplyCount["${($w.TitleLike)}"] = $reapplyCount["${($w.TitleLike)}"] + 1
           }
         }
       }
     }
     $totalApplied += $count
-    Write-Host "Applied $count layout entrie(s) from $path"
+    foreach ($w in $entries) {
+      $key = "${($w.TitleLike)}"
+      $msg = "Applied: '${($w.TitleLike)}' — positioned"
+      if ($wasStripped.ContainsKey($key) -and $wasStripped[$key]) { $msg += "; titlebar stripped" }
+      if ($reapplyCount.ContainsKey($key) -and $reapplyCount[$key] -gt 0) { $msg += "; resized x$($reapplyCount[$key])" }
+      Write-Host $msg
+    }
+    Write-Host "Applied $count entry(ies) from $path"
   }
 
   if ($totalApplied -eq 0) {
