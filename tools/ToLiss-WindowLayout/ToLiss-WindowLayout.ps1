@@ -153,30 +153,46 @@ How long to wait for a matching window to appear.
 #>
 function Set-Window {
   param(
-    [Parameter(Mandatory)] [string]$TitleLike,
+    [string]$TitleLike,
+    [IntPtr]$Handle,
     [Parameter(Mandatory)] [int]$X,
     [Parameter(Mandatory)] [int]$Y,
     [Parameter(Mandatory)] [int]$Width,
     [Parameter(Mandatory)] [int]$Height,
     [switch]$FirstOnly,
     [int]$TimeoutSec = 20,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$ReturnResults
   )
+  if (-not $Handle -and [string]::IsNullOrWhiteSpace($TitleLike)) { throw "Provide either -TitleLike or -Handle" }
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
-  do {
-    $targets = Get-OpenWindows | Where-Object { $_.Title -like "*$TitleLike*" }
-    if ($targets) {
-      if ($FirstOnly) { $targets = @($targets | Select-Object -First 1) }
-      break
+  $targets = @()
+  if ($Handle) {
+    # Build a single target from handle, enrich with title for logs
+    [Win32Native+RECT]$r0 = New-Object 'Win32Native+RECT'
+    $ok0 = [Win32Native]::GetWindowRect($Handle, [ref]$r0)
+    if ($ok0) {
+      $len = [Win32Native]::GetWindowTextLength($Handle)
+      $title = ''
+      if ($len -gt 0) { $sb = New-Object System.Text.StringBuilder ($len + 1); [void][Win32Native]::GetWindowText($Handle, $sb, $sb.Capacity); $title = $sb.ToString() }
+      $targets = @([pscustomobject]@{ Handle=$Handle; Title=$title })
     }
-    Start-Sleep -Milliseconds 250
-  } while ((Get-Date) -lt $deadline)
-
-  if (-not $targets) {
-    Write-Warning "Window '$TitleLike' not found within ${TimeoutSec}s."
-    return
+  } else {
+    do {
+      $targets = Get-OpenWindows | Where-Object { $_.Title -like "*$TitleLike*" }
+      if ($targets) {
+        if ($FirstOnly) { $targets = @($targets | Select-Object -First 1) }
+        break
+      }
+      Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $deadline)
+    if (-not $targets) {
+      Write-Warning "Window '$TitleLike' not found within ${TimeoutSec}s."
+      return @()
+    }
   }
 
+  $results = @()
   foreach ($t in $targets) {
     [void][Win32Native]::ShowWindowAsync($t.Handle, [Win32Native]::SW_RESTORE)
 
@@ -220,7 +236,14 @@ function Set-Window {
       if ($placed) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
       else         { Write-Warning "Failed to precisely size '$($t.Title)' (tried $attempt)." }
     }
+    # Collect final rect
+    [Win32Native+RECT]$rf = New-Object 'Win32Native+RECT'
+    [void][Win32Native]::GetWindowRect($t.Handle, [ref]$rf)
+    $fw = [Math]::Max(0, $rf.Right - $rf.Left)
+    $fh = [Math]::Max(0, $rf.Bottom - $rf.Top)
+    $results += [pscustomobject]@{ Handle=$t.Handle; Title=$t.Title; X=$rf.Left; Y=$rf.Top; Width=$fw; Height=$fh }
   }
+  if ($ReturnResults) { return ,$results } else { return }
 }
 
 <#
@@ -251,6 +274,20 @@ function Select-WindowsInteractive {
   $want = $ans -split '[^0-9]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ }
   $sel  = foreach ($i in $want) { if ($i -ge 0 -and $i -lt $all.Count) { $all[$i] } }
   return $sel
+}
+
+
+<#
+.SYNOPSIS
+Get window rect by handle.
+#>
+function Get-WindowRectByHandle {
+  param([Parameter(Mandatory)][IntPtr]$Handle)
+  [Win32Native+RECT]$rr = New-Object 'Win32Native+RECT'
+  if (-not [Win32Native]::GetWindowRect($Handle, [ref]$rr)) { return $null }
+  $ww = [Math]::Max(0, $rr.Right - $rr.Left)
+  $hh = [Math]::Max(0, $rr.Bottom - $rr.Top)
+  return [pscustomobject]@{ X=$rr.Left; Y=$rr.Top; Width=$ww; Height=$hh }
 }
 
 
@@ -402,10 +439,12 @@ function Apply-Layout {
     $entries = @($layout)
     $wasStripped = @{}
     $reapplyCount = @{}
+    $handles = @{}
     $finalOk = @{}
     # Phase 1: position all windows first
     foreach ($w in $entries) {
-      Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20 -Quiet
+      $res = Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20 -FirstOnly -Quiet -ReturnResults
+      if ($res -and $res.Count -gt 0) { $handles["$($w.TitleLike)"] = $res[0].Handle }
       $count++
     }
     # Phase 2: start overlays (may strip title bars)
@@ -435,15 +474,21 @@ function Apply-Layout {
           $okNow = $false
           for ($i=0; $i -lt 5; $i++) {
             Start-Sleep -Milliseconds (200 + ($i*250))
-            Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -Quiet
+            if ($handles.ContainsKey("$($w.TitleLike)")) {
+              Set-Window -Handle $handles["$($w.TitleLike)"] -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -Quiet
+            } else {
+              Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -FirstOnly -Quiet
+            }
             $reapplyCount["$($w.TitleLike)"] = $reapplyCount["$($w.TitleLike)"] + 1
             # Verify actual rect and require stability across two reads
             $okOnce = $false
             for ($p=0; $p -lt 2; $p++) {
               Start-Sleep -Milliseconds 150
-              $cur = Get-OpenWindows | Where-Object { $_.Title -like "*$($w.TitleLike)*" } | Select-Object -First 1
+              if ($handles.ContainsKey("$($w.TitleLike)") ) { $cur = Get-WindowRectByHandle -Handle $handles["$($w.TitleLike)"] }
+              else { $cur = Get-OpenWindows | Where-Object { $_.Title -like "*$($w.TitleLike)*" } | Select-Object -First 1 }
               if ($cur) {
-                if ([Math]::Abs([int]$cur.Width - [int]$w.Width) -le 1 -and [Math]::Abs([int]$cur.Height - [int]$w.Height) -le 1) {
+                $cw = [int]$cur.Width; $ch = [int]$cur.Height
+                if ([Math]::Abs($cw - [int]$w.Width) -le 1 -and [Math]::Abs($ch - [int]$w.Height) -le 1) {
                   if ($okOnce) { $okNow = $true; break }
                   $okOnce = $true
                   continue
