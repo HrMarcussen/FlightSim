@@ -32,7 +32,7 @@ using System;
 using System.Text;
 using System.Runtime.InteropServices;
 
-public static class Win32Native {
+public static class Win32NativeV2 {
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -101,8 +101,8 @@ try {
 Enable best-effort per-monitor DPI awareness (v2 if supported).
 #>
 function Enable-PerMonitorDpi {
-  try { [void][Win32Native]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) } catch {
-    try { [void][Win32Native]::SetProcessDPIAware() } catch {}
+  try { [void][Win32NativeV2]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) } catch {
+    try { [void][Win32NativeV2]::SetProcessDPIAware() } catch {}
   }
 }
 
@@ -122,23 +122,23 @@ Return only visible windows (default).
 function Get-OpenWindows {
   param([switch]$VisibleOnly = $true)
   $list = New-Object System.Collections.Generic.List[object]
-  [Win32Native]::EnumWindows({
+  [Win32NativeV2]::EnumWindows({
     param([IntPtr]$h, [IntPtr]$p)
-    if ($VisibleOnly -and -not [Win32Native]::IsWindowVisible($h)) { return $true }
+    if ($VisibleOnly -and -not [Win32NativeV2]::IsWindowVisible($h)) { return $true }
 
-    $len = [Win32Native]::GetWindowTextLength($h)
+    $len = [Win32NativeV2]::GetWindowTextLength($h)
     if ($len -le 0) { return $true }
     $sb = New-Object System.Text.StringBuilder ($len + 1)
-    [void][Win32Native]::GetWindowText($h, $sb, $sb.Capacity)
+    [void][Win32NativeV2]::GetWindowText($h, $sb, $sb.Capacity)
     $title = $sb.ToString()
     if ([string]::IsNullOrWhiteSpace($title)) { return $true }
 
     $csb = New-Object System.Text.StringBuilder 256
-    [void][Win32Native]::GetClassName($h, $csb, $csb.Capacity)
+    [void][Win32NativeV2]::GetClassName($h, $csb, $csb.Capacity)
     $class = $csb.ToString()
 
-    [Win32Native+RECT]$r = New-Object 'Win32Native+RECT'
-    [void][Win32Native]::GetWindowRect($h, [ref]$r)
+    [Win32NativeV2+RECT]$r = New-Object 'Win32NativeV2+RECT'
+    [void][Win32NativeV2]::GetWindowRect($h, [ref]$r)
     $ww = [Math]::Max(0, $r.Right - $r.Left)
     $hh = [Math]::Max(0, $r.Bottom - $r.Top)
     if ($ww -le 0 -or $hh -le 0) { return $true }
@@ -200,12 +200,12 @@ function Set-Window {
   $targets = @()
   if ($Handle) {
     # Build a single target from handle, enrich with title for logs
-    [Win32Native+RECT]$r0 = New-Object 'Win32Native+RECT'
-    $ok0 = [Win32Native]::GetWindowRect($Handle, [ref]$r0)
+    [Win32NativeV2+RECT]$r0 = New-Object 'Win32NativeV2+RECT'
+    $ok0 = [Win32NativeV2]::GetWindowRect($Handle, [ref]$r0)
     if ($ok0) {
-      $len = [Win32Native]::GetWindowTextLength($Handle)
+      $len = [Win32NativeV2]::GetWindowTextLength($Handle)
       $title = ''
-      if ($len -gt 0) { $sb = New-Object System.Text.StringBuilder ($len + 1); [void][Win32Native]::GetWindowText($Handle, $sb, $sb.Capacity); $title = $sb.ToString() }
+      if ($len -gt 0) { $sb = New-Object System.Text.StringBuilder ($len + 1); [void][Win32NativeV2]::GetWindowText($Handle, $sb, $sb.Capacity); $title = $sb.ToString() }
       $targets = @([pscustomobject]@{ Handle=$Handle; Title=$title })
     }
   } else {
@@ -225,35 +225,35 @@ function Set-Window {
 
   $results = @()
   foreach ($t in $targets) {
-    [void][Win32Native]::ShowWindowAsync($t.Handle, [Win32Native]::SW_RESTORE)
+    [void][Win32NativeV2]::ShowWindowAsync($t.Handle, [Win32NativeV2]::SW_RESTORE)
 
-    $flags = [Win32Native]::SWP_NOZORDER -bor [Win32Native]::SWP_NOACTIVATE
+    $flags = [Win32NativeV2]::SWP_NOZORDER -bor [Win32NativeV2]::SWP_NOACTIVATE
     $attempt = 0
     $placed = $false
     do {
       $attempt++
       $w = $Width; $h = $Height; $x = $X; $y = $Y
-      $flagsTry = ($flags -bor [Win32Native]::SWP_FRAMECHANGED)
+      $flagsTry = ($flags -bor [Win32NativeV2]::SWP_FRAMECHANGED)
       if ($attempt -ge 3) {
         # Nudge size and force non-client frame recalculation
-        [void][Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, ($w + 1), $h, $flagsTry)
+        [void][Win32NativeV2]::SetWindowPos($t.Handle, [Win32NativeV2]::HWND_TOP, $x, $y, ($w + 1), $h, $flagsTry)
         Start-Sleep -Milliseconds 80
       }
 
-      $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, $w, $h, $flagsTry)
+      $ok = [Win32NativeV2]::SetWindowPos($t.Handle, [Win32NativeV2]::HWND_TOP, $x, $y, $w, $h, $flagsTry)
       if (-not $ok) { break }
 
       Start-Sleep -Milliseconds 100
       # Verify current rect
-      [Win32Native+RECT]$r = New-Object 'Win32Native+RECT'
-      [void][Win32Native]::GetWindowRect($t.Handle, [ref]$r)
+      [Win32NativeV2+RECT]$r = New-Object 'Win32NativeV2+RECT'
+      [void][Win32NativeV2]::GetWindowRect($t.Handle, [ref]$r)
       $cw = [Math]::Max(0, $r.Right - $r.Left)
       $ch = [Math]::Max(0, $r.Bottom - $r.Top)
       if ([Math]::Abs($cw - $w) -le 1 -and [Math]::Abs($ch - $h) -le 1) {
         # Require stability across a short delay to avoid races with style changes
         Start-Sleep -Milliseconds 150
-        [Win32Native+RECT]$r2 = New-Object 'Win32Native+RECT'
-        [void][Win32Native]::GetWindowRect($t.Handle, [ref]$r2)
+        [Win32NativeV2+RECT]$r2 = New-Object 'Win32NativeV2+RECT'
+        [void][Win32NativeV2]::GetWindowRect($t.Handle, [ref]$r2)
         $cw2 = [Math]::Max(0, $r2.Right - $r2.Left)
         $ch2 = [Math]::Max(0, $r2.Bottom - $r2.Top)
         if ([Math]::Abs($cw2 - $w) -le 1 -and [Math]::Abs($ch2 - $h) -le 1) {
@@ -268,8 +268,8 @@ function Set-Window {
       else         { Write-Warning "Failed to precisely size '$($t.Title)' (tried $attempt)." }
     }
     # Collect final rect
-    [Win32Native+RECT]$rf = New-Object 'Win32Native+RECT'
-    [void][Win32Native]::GetWindowRect($t.Handle, [ref]$rf)
+    [Win32NativeV2+RECT]$rf = New-Object 'Win32NativeV2+RECT'
+    [void][Win32NativeV2]::GetWindowRect($t.Handle, [ref]$rf)
     $fw = [Math]::Max(0, $rf.Right - $rf.Left)
     $fh = [Math]::Max(0, $rf.Bottom - $rf.Top)
     $results += [pscustomobject]@{ Handle=$t.Handle; Title=$t.Title; X=$rf.Left; Y=$rf.Top; Width=$fw; Height=$fh }
@@ -314,8 +314,8 @@ Get window rect by handle.
 #>
 function Get-WindowRectByHandle {
   param([Parameter(Mandatory)][IntPtr]$Handle)
-  [Win32Native+RECT]$rr = New-Object 'Win32Native+RECT'
-  if (-not [Win32Native]::GetWindowRect($Handle, [ref]$rr)) { return $null }
+  [Win32NativeV2+RECT]$rr = New-Object 'Win32NativeV2+RECT'
+  if (-not [Win32NativeV2]::GetWindowRect($Handle, [ref]$rr)) { return $null }
   $ww = [Math]::Max(0, $rr.Right - $rr.Left)
   $hh = [Math]::Max(0, $rr.Bottom - $rr.Top)
   return [pscustomobject]@{ X=$rr.Left; Y=$rr.Top; Width=$ww; Height=$hh }
@@ -486,7 +486,7 @@ function Apply-Layout {
         $doStrip = $false
         try { $doStrip = [bool]$w.StripTitleBar } catch {}
         if ($doStrip -and $handles.ContainsKey($key)) {
-          [Win32Native]::StripTitleBarKeepBounds($handles[$key], [int]$w.X, [int]$w.Y, [int]$w.Width, [int]$w.Height)
+          [Win32NativeV2]::StripTitleBarKeepBounds($handles[$key], [int]$w.X, [int]$w.Y, [int]$w.Width, [int]$w.Height)
           Start-Sleep -Milliseconds 150
           $wasStripped[$key] = $true
         }
