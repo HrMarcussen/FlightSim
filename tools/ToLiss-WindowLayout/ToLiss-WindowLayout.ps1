@@ -59,7 +59,11 @@ public static class Win32Native {
 }
 "@
 
-Add-Type -TypeDefinition $code -Language CSharp -PassThru | Out-Null
+try {
+  Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop | Out-Null
+} catch {
+  if ($_.FullyQualifiedErrorId -notlike 'TYPE_ALREADY_EXISTS*') { throw }
+}
 
 <#
 .SYNOPSIS
@@ -401,12 +405,16 @@ function Apply-Layout {
       }
     }
     if ($needsReapply) {
-      Start-Sleep -Milliseconds 250
+      # Give stripped windows a moment to settle, then reapply a few times
       foreach ($w in $entries) {
         if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
-          try { if ([bool]$w.StripTitleBar) {
+          $isStripped = $false
+          try { $isStripped = [bool]$w.StripTitleBar } catch {}
+          if (-not $isStripped) { continue }
+          for ($i=0; $i -lt 3; $i++) {
+            Start-Sleep -Milliseconds (200 + ($i*200))
             Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10
-          } } catch {}
+          }
         }
       }
     }
