@@ -43,6 +43,10 @@ public static class Win32Native {
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLong")] private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")] private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")] private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
     // DPI awareness (best effort; older OS will ignore)
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
@@ -52,10 +56,37 @@ public static class Win32Native {
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_FRAMECHANGED = 0x0020;
+    public const uint SWP_SHOWWINDOW = 0x0040;
     public const int  SW_RESTORE = 9;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    public const int GWL_STYLE = -16;
+    public const int WS_CAPTION = 0x00C00000;
+    public const int WS_THICKFRAME = 0x00040000;
+    public const int WS_SYSMENU = 0x00080000;
+    public const int WS_MINIMIZEBOX = 0x00020000;
+    public const int WS_MAXIMIZEBOX = 0x00010000;
+
+    private static IntPtr GetWindowLongPtrSafe(IntPtr hWnd, int nIndex) {
+        if (IntPtr.Size == 8) return GetWindowLongPtr64(hWnd, nIndex);
+        return new IntPtr(GetWindowLong32(hWnd, nIndex));
+    }
+    private static IntPtr SetWindowLongPtrSafe(IntPtr hWnd, int nIndex, IntPtr newVal) {
+        if (IntPtr.Size == 8) return SetWindowLongPtr64(hWnd, nIndex, newVal);
+        return new IntPtr(SetWindowLong32(hWnd, nIndex, newVal.ToInt32()));
+    }
+
+    public static void StripTitleBarKeepBounds(IntPtr hWnd, int x, int y, int w, int h) {
+        try {
+            IntPtr stylePtr = GetWindowLongPtrSafe(hWnd, GWL_STYLE);
+            long style = stylePtr.ToInt64();
+            style &= ~(long)(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+            SetWindowLongPtrSafe(hWnd, GWL_STYLE, new IntPtr(style));
+            SetWindowPos(hWnd, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
+        } catch { }
+    }
 }
 "@
 
@@ -359,7 +390,7 @@ function Capture-Layout {
 Start a black border overlay process for a layout entry if configured.
 #>
 function Start-OverlayForEntry {
-  param([Parameter(Mandatory)]$Entry)
+  param([Parameter(Mandatory)]$Entry, [switch]$SkipStripTitleBar)
   $toolDir = $script:ToolDir
   if (-not $toolDir) { $toolDir = Split-Path -Parent $PSCommandPath }
   $overlayScript = if ($toolDir) { Join-Path $toolDir 'Add-BlackBorderOverlay.ps1' } else { $null }
@@ -393,7 +424,7 @@ function Start-OverlayForEntry {
     '-TopExtra',"$tx",
     '-TimeoutSec','30'
   )
-  if ($st) { $args += '-StripTitleBar' }
+  if ($st -and -not $SkipStripTitleBar) { $args += '-StripTitleBar' }
   if ($fw) { $args += '-Follow' }
 
   # Build a single argument string for robust quoting on PS5.1
@@ -447,15 +478,26 @@ function Apply-Layout {
       if ($res -and $res.Count -gt 0) { $handles["$($w.TitleLike)"] = $res[0].Handle }
       $count++
     }
-    # Phase 2: start overlays (may strip title bars)
+    # Phase 2: synchronously strip title bars (if requested) before overlays
     foreach ($w in $entries) {
-      Start-OverlayForEntry -Entry $w
       $key = "$($w.TitleLike)"
       $wasStripped[$key] = $false
       if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
-        try { if ([bool]$w.StripTitleBar) { $wasStripped[$key] = $true } } catch {}
+        $doStrip = $false
+        try { $doStrip = [bool]$w.StripTitleBar } catch {}
+        if ($doStrip -and $handles.ContainsKey($key)) {
+          [Win32Native]::StripTitleBarKeepBounds($handles[$key], [int]$w.X, [int]$w.Y, [int]$w.Width, [int]$w.Height)
+          Start-Sleep -Milliseconds 150
+          $wasStripped[$key] = $true
+        }
       }
       $reapplyCount[$key] = 0
+    }
+    # Phase 2.5: start overlays (skip stripping here if already done)
+    foreach ($w in $entries) {
+      $key = "$($w.TitleLike)"
+      $skip = $false; if ($wasStripped.ContainsKey($key) -and $wasStripped[$key]) { $skip = $true }
+      Start-OverlayForEntry -Entry $w -SkipStripTitleBar:$skip
     }
     # Phase 3: if any stripped, re-apply final bounds to match JSON exactly
     $needsReapply = $false
