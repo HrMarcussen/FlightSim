@@ -186,10 +186,9 @@ function Set-Window {
     do {
       $attempt++
       $w = $Width; $h = $Height; $x = $X; $y = $Y
-      $flagsTry = $flags
+      $flagsTry = ($flags -bor [Win32Native]::SWP_FRAMECHANGED)
       if ($attempt -ge 3) {
         # Nudge size and force non-client frame recalculation
-        $flagsTry = $flagsTry -bor [Win32Native]::SWP_FRAMECHANGED
         [void][Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, ($w + 1), $h, $flagsTry)
         Start-Sleep -Milliseconds 80
       }
@@ -395,6 +394,7 @@ function Apply-Layout {
     $entries = @($layout)
     $wasStripped = @{}
     $reapplyCount = @{}
+    $finalOk = @{}
     # Phase 1: position all windows first
     foreach ($w in $entries) {
       Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20 -Quiet
@@ -424,11 +424,18 @@ function Apply-Layout {
           $isStripped = $false
           try { $isStripped = [bool]$w.StripTitleBar } catch {}
           if (-not $isStripped) { continue }
+          $okNow = $false
           for ($i=0; $i -lt 3; $i++) {
             Start-Sleep -Milliseconds (200 + ($i*200))
             Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -Quiet
             $reapplyCount["$($w.TitleLike)"] = $reapplyCount["$($w.TitleLike)"] + 1
+            # Verify actual rect
+            $cur = Get-OpenWindows | Where-Object { $_.Title -like "*$($w.TitleLike)*" } | Select-Object -First 1
+            if ($cur) {
+              if ([Math]::Abs([int]$cur.Width - [int]$w.Width) -le 1 -and [Math]::Abs([int]$cur.Height - [int]$w.Height) -le 1) { $okNow = $true; break }
+            }
           }
+          $finalOk["$($w.TitleLike)"] = $okNow
         }
       }
     }
@@ -438,6 +445,7 @@ function Apply-Layout {
       $msg = "Applied: '$($w.TitleLike)' - positioned"
       if ($wasStripped.ContainsKey($key) -and $wasStripped[$key]) { $msg += "; titlebar stripped" }
       if ($reapplyCount.ContainsKey($key) -and $reapplyCount[$key] -gt 0) { $msg += "; resized x$($reapplyCount[$key])" }
+      if ($finalOk.ContainsKey($key)) { $msg += ($finalOk[$key] ? "; ok" : "; mismatch") }
       Write-Host $msg
     }
     Write-Host "Applied $count entry(ies) from $path"
@@ -484,4 +492,3 @@ switch ($Action) {
   "overlays" { Apply-OverlaysOnly }
   "stop-overlays" { Stop-AllOverlays }
 }
-
