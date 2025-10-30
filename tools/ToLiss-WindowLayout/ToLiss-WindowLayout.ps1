@@ -173,10 +173,36 @@ function Set-Window {
 
   foreach ($t in $targets) {
     [void][Win32Native]::ShowWindowAsync($t.Handle, [Win32Native]::SW_RESTORE)
-    $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $X, $Y, $Width, $Height,
-      [Win32Native]::SWP_NOZORDER -bor [Win32Native]::SWP_NOACTIVATE)
-    if ($ok) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
-    else     { Write-Warning "Failed to position '$($t.Title)'." }
+
+    $flags = [Win32Native]::SWP_NOZORDER -bor [Win32Native]::SWP_NOACTIVATE
+    $attempt = 0
+    $placed = $false
+    do {
+      $attempt++
+      $w = $Width; $h = $Height; $x = $X; $y = $Y
+      if ($attempt -ge 3) {
+        # Nudge size to force Windows/apps to recalc, then set final
+        [void][Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, ($w + 1), $h, $flags)
+        Start-Sleep -Milliseconds 80
+      }
+
+      $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, $w, $h, $flags)
+      if (-not $ok) { break }
+
+      Start-Sleep -Milliseconds 100
+      # Verify current rect
+      [Win32Native+RECT]$r = New-Object 'Win32Native+RECT'
+      [void][Win32Native]::GetWindowRect($t.Handle, [ref]$r)
+      $cw = [Math]::Max(0, $r.Right - $r.Left)
+      $ch = [Math]::Max(0, $r.Bottom - $r.Top)
+      if ([Math]::Abs($cw - $w) -le 1 -and [Math]::Abs($ch - $h) -le 1) {
+        $placed = $true
+        break
+      }
+    } while ($attempt -lt 4)
+
+    if ($placed) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
+    else         { Write-Warning "Failed to precisely size '$($t.Title)' (tried $attempt)." }
   }
 }
 
@@ -359,6 +385,16 @@ function Apply-Layout {
     foreach ($w in $layout) {
       Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20
       Start-OverlayForEntry -Entry $w
+      # If the overlay strips the title bar, the window frame changes after the first apply.
+      # Re-apply target bounds so the final outer size matches the JSON.
+      $shouldReapply = $false
+      if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
+        try { if ([bool]$w.StripTitleBar) { $shouldReapply = $true } } catch {}
+      }
+      if ($shouldReapply) {
+        Start-Sleep -Milliseconds 200
+        Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10
+      }
       $count++
     }
     $totalApplied += $count
