@@ -445,7 +445,10 @@ function Apply-Layout {
       $msg = "Applied: '$($w.TitleLike)' - positioned"
       if ($wasStripped.ContainsKey($key) -and $wasStripped[$key]) { $msg += "; titlebar stripped" }
       if ($reapplyCount.ContainsKey($key) -and $reapplyCount[$key] -gt 0) { $msg += "; resized x$($reapplyCount[$key])" }
-      if ($finalOk.ContainsKey($key)) { $msg += ($finalOk[$key] ? "; ok" : "; mismatch") }
+      if ($finalOk.ContainsKey($key)) {
+        if ($finalOk[$key]) { $msg += "; ok" }
+        else { $msg += "; mismatch" }
+      }
       Write-Host $msg
     }
     Write-Host "Applied $count entry(ies) from $path"
