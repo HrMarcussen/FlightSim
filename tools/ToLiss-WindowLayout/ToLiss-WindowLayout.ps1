@@ -203,10 +203,18 @@ function Set-Window {
       $cw = [Math]::Max(0, $r.Right - $r.Left)
       $ch = [Math]::Max(0, $r.Bottom - $r.Top)
       if ([Math]::Abs($cw - $w) -le 1 -and [Math]::Abs($ch - $h) -le 1) {
-        $placed = $true
-        break
+        # Require stability across a short delay to avoid races with style changes
+        Start-Sleep -Milliseconds 150
+        [Win32Native+RECT]$r2 = New-Object 'Win32Native+RECT'
+        [void][Win32Native]::GetWindowRect($t.Handle, [ref]$r2)
+        $cw2 = [Math]::Max(0, $r2.Right - $r2.Left)
+        $ch2 = [Math]::Max(0, $r2.Bottom - $r2.Top)
+        if ([Math]::Abs($cw2 - $w) -le 1 -and [Math]::Abs($ch2 - $h) -le 1) {
+          $placed = $true
+          break
+        }
       }
-    } while ($attempt -lt 4)
+    } while ($attempt -lt 6)
 
     if (-not $Quiet) {
       if ($placed) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
@@ -425,15 +433,25 @@ function Apply-Layout {
           try { $isStripped = [bool]$w.StripTitleBar } catch {}
           if (-not $isStripped) { continue }
           $okNow = $false
-          for ($i=0; $i -lt 3; $i++) {
-            Start-Sleep -Milliseconds (200 + ($i*200))
+          for ($i=0; $i -lt 5; $i++) {
+            Start-Sleep -Milliseconds (200 + ($i*250))
             Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -Quiet
             $reapplyCount["$($w.TitleLike)"] = $reapplyCount["$($w.TitleLike)"] + 1
-            # Verify actual rect
-            $cur = Get-OpenWindows | Where-Object { $_.Title -like "*$($w.TitleLike)*" } | Select-Object -First 1
-            if ($cur) {
-              if ([Math]::Abs([int]$cur.Width - [int]$w.Width) -le 1 -and [Math]::Abs([int]$cur.Height - [int]$w.Height) -le 1) { $okNow = $true; break }
+            # Verify actual rect and require stability across two reads
+            $okOnce = $false
+            for ($p=0; $p -lt 2; $p++) {
+              Start-Sleep -Milliseconds 150
+              $cur = Get-OpenWindows | Where-Object { $_.Title -like "*$($w.TitleLike)*" } | Select-Object -First 1
+              if ($cur) {
+                if ([Math]::Abs([int]$cur.Width - [int]$w.Width) -le 1 -and [Math]::Abs([int]$cur.Height - [int]$w.Height) -le 1) {
+                  if ($okOnce) { $okNow = $true; break }
+                  $okOnce = $true
+                  continue
+                }
+              }
+              $okOnce = $false
             }
+            if ($okNow) { break }
           }
           $finalOk["$($w.TitleLike)"] = $okNow
         }
