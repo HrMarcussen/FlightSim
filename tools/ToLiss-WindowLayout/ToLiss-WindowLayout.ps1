@@ -403,7 +403,7 @@ function Apply-Layout {
     # Phase 2: start overlays (may strip title bars)
     foreach ($w in $entries) {
       Start-OverlayForEntry -Entry $w
-      $key = "${($w.TitleLike)}"
+      $key = "$($w.TitleLike)"
       $wasStripped[$key] = $false
       if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
         try { if ([bool]$w.StripTitleBar) { $wasStripped[$key] = $true } } catch {}
@@ -427,15 +427,15 @@ function Apply-Layout {
           for ($i=0; $i -lt 3; $i++) {
             Start-Sleep -Milliseconds (200 + ($i*200))
             Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -Quiet
-            $reapplyCount["${($w.TitleLike)}"] = $reapplyCount["${($w.TitleLike)}"] + 1
+            $reapplyCount["$($w.TitleLike)"] = $reapplyCount["$($w.TitleLike)"] + 1
           }
         }
       }
     }
     $totalApplied += $count
     foreach ($w in $entries) {
-      $key = "${($w.TitleLike)}"
-      $msg = "Applied: '${($w.TitleLike)}' — positioned"
+      $key = "$($w.TitleLike)"
+      $msg = "Applied: '$($w.TitleLike)' - positioned"
       if ($wasStripped.ContainsKey($key) -and $wasStripped[$key]) { $msg += "; titlebar stripped" }
       if ($reapplyCount.ContainsKey($key) -and $reapplyCount[$key] -gt 0) { $msg += "; resized x$($reapplyCount[$key])" }
       Write-Host $msg
@@ -484,3 +484,4 @@ switch ($Action) {
   "overlays" { Apply-OverlaysOnly }
   "stop-overlays" { Stop-AllOverlays }
 }
+
