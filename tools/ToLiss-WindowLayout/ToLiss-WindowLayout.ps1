@@ -1,4 +1,4 @@
-﻿# WindowLayout.ps1
+# WindowLayout.ps1
 <#
 .SYNOPSIS
 Captures and applies window layouts for any Windows desktop apps (e.g., X-Plane, MSFS).
@@ -51,6 +51,7 @@ public static class Win32Native {
     public static readonly IntPtr HWND_TOP = IntPtr.Zero;
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
+    public const uint SWP_FRAMECHANGED = 0x0020;
     public const int  SW_RESTORE = 9;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -180,13 +181,15 @@ function Set-Window {
     do {
       $attempt++
       $w = $Width; $h = $Height; $x = $X; $y = $Y
+      $flagsTry = $flags
       if ($attempt -ge 3) {
-        # Nudge size to force Windows/apps to recalc, then set final
-        [void][Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, ($w + 1), $h, $flags)
+        # Nudge size and force non-client frame recalculation
+        $flagsTry = $flagsTry -bor [Win32Native]::SWP_FRAMECHANGED
+        [void][Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, ($w + 1), $h, $flagsTry)
         Start-Sleep -Milliseconds 80
       }
 
-      $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, $w, $h, $flags)
+      $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $x, $y, $w, $h, $flagsTry)
       if (-not $ok) { break }
 
       Start-Sleep -Milliseconds 100
@@ -382,20 +385,30 @@ function Apply-Layout {
       continue
     }
     $count = 0
-    foreach ($w in $layout) {
+    $entries = @($layout)
+    # Phase 1: position all windows first
+    foreach ($w in $entries) {
       Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 20
-      Start-OverlayForEntry -Entry $w
-      # If the overlay strips the title bar, the window frame changes after the first apply.
-      # Re-apply target bounds so the final outer size matches the JSON.
-      $shouldReapply = $false
-      if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
-        try { if ([bool]$w.StripTitleBar) { $shouldReapply = $true } } catch {}
-      }
-      if ($shouldReapply) {
-        Start-Sleep -Milliseconds 200
-        Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10
-      }
       $count++
+    }
+    # Phase 2: start overlays (may strip title bars)
+    foreach ($w in $entries) { Start-OverlayForEntry -Entry $w }
+    # Phase 3: if any stripped, re-apply final bounds to match JSON exactly
+    $needsReapply = $false
+    foreach ($w in $entries) {
+      if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
+        try { if ([bool]$w.StripTitleBar) { $needsReapply = $true; break } } catch {}
+      }
+    }
+    if ($needsReapply) {
+      Start-Sleep -Milliseconds 250
+      foreach ($w in $entries) {
+        if ($w -and ($w.PSObject.Properties.Match('StripTitleBar').Count -gt 0)) {
+          try { if ([bool]$w.StripTitleBar) {
+            Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10
+          } } catch {}
+        }
+      }
     }
     $totalApplied += $count
     Write-Host "Applied $count layout entrie(s) from $path"
@@ -442,4 +455,3 @@ switch ($Action) {
   "overlays" { Apply-OverlaysOnly }
   "stop-overlays" { Stop-AllOverlays }
 }
-
