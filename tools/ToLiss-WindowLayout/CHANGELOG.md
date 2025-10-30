@@ -10,3 +10,4 @@ All notable changes to this toolset are documented here.
 
 - Fix: Ignore TYPE_ALREADY_EXISTS when loading Win32 helper type to allow reruns in same session.
 - Improve: Reapply bounds for stripped windows up to 3 passes with delays to ensure final outer size matches JSON even on slower style transitions.
+- Tweak: Quieter console output with per-entry summaries (positioned/stripped/resized) and no duplicate 'Placed' lines during retries/reapply.
