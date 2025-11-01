@@ -37,6 +37,7 @@ param(
   [int]$Thickness = 8,
   [int]$TopExtra = 0,
   [int]$Cover = 2,
+  [int]$TopCoverExtra = 0,
   [int]$TimeoutSec = 20,
   [switch]$Follow,
   [switch]$StripTitleBar
@@ -51,8 +52,8 @@ using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Windows.Forms;
 
-// V4 names to avoid stale type collisions between runs
-public static class OverlayNativeV4 {
+// V5 names to avoid stale type collisions between runs
+public static class OverlayNativeV5 {
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -110,11 +111,11 @@ public static class OverlayNativeV4 {
     }
 }
 
-public class BorderOverlayFormV4 : Form {
+public class BorderOverlayFormV5 : Form {
     private int _tL, _tT, _tR, _tB;
-    private int _cover;
+    private int _cL, _cT, _cR, _cB;
 
-    public BorderOverlayFormV4(int x, int y, int w, int h, int tLeft, int tTop, int tRight, int tBottom, int cover) {
+    public BorderOverlayFormV5(int x, int y, int w, int h, int tLeft, int tTop, int tRight, int tBottom, int cLeft, int cTop, int cRight, int cBottom) {
         this.StartPosition = FormStartPosition.Manual;
         this.FormBorderStyle = FormBorderStyle.None;
         this.ShowInTaskbar = false;
@@ -125,7 +126,10 @@ public class BorderOverlayFormV4 : Form {
         _tT = Math.Max(1, tTop);
         _tR = Math.Max(1, tRight);
         _tB = Math.Max(1, tBottom);
-        _cover = Math.Max(0, cover);
+        _cL = Math.Max(0, cLeft);
+        _cT = Math.Max(0, cTop);
+        _cR = Math.Max(0, cRight);
+        _cB = Math.Max(0, cBottom);
         SetBounds(x, y, w, h);
         UpdateRegion(w, h);
     }
@@ -147,18 +151,21 @@ public class BorderOverlayFormV4 : Form {
     }
 
     public void ForceTopMost() {
-        OverlayNativeV4.SetWindowPos(this.Handle, OverlayNativeV4.HWND_TOPMOST, 0, 0, 0, 0,
-            OverlayNativeV4.SWP_NOMOVE | OverlayNativeV4.SWP_NOSIZE | OverlayNativeV4.SWP_NOACTIVATE | OverlayNativeV4.SWP_SHOWWINDOW);
+        OverlayNativeV5.SetWindowPos(this.Handle, OverlayNativeV5.HWND_TOPMOST, 0, 0, 0, 0,
+            OverlayNativeV5.SWP_NOMOVE | OverlayNativeV5.SWP_NOSIZE | OverlayNativeV5.SWP_NOACTIVATE | OverlayNativeV5.SWP_SHOWWINDOW);
         this.TopMost = true;
         this.BringToFront();
     }
 
-    public void UpdateBoundsAndThickness(int x, int y, int w, int h, int tLeft, int tTop, int tRight, int tBottom, int cover) {
+    public void UpdateBoundsAndThickness(int x, int y, int w, int h, int tLeft, int tTop, int tRight, int tBottom, int cLeft, int cTop, int cRight, int cBottom) {
         _tL = Math.Max(1, tLeft);
         _tT = Math.Max(1, tTop);
         _tR = Math.Max(1, tRight);
         _tB = Math.Max(1, tBottom);
-        _cover = Math.Max(0, cover);
+        _cL = Math.Max(0, cLeft);
+        _cT = Math.Max(0, cTop);
+        _cR = Math.Max(0, cRight);
+        _cB = Math.Max(0, cBottom);
         this.Bounds = new Rectangle(x, y, Math.Max(1, w), Math.Max(1, h));
         UpdateRegion(this.Width, this.Height);
     }
@@ -168,10 +175,10 @@ public class BorderOverlayFormV4 : Form {
         var r = new Region(outer);
         int innerW = Math.Max(0, w - (_tL + _tR));
         int innerH = Math.Max(0, h - (_tT + _tB));
-        int innerX = Math.Max(0, _tL + _cover);
-        int innerY = Math.Max(0, _tT + _cover);
-        innerW = Math.Max(0, innerW - (2 * _cover));
-        innerH = Math.Max(0, innerH - (2 * _cover));
+        int innerX = Math.Max(0, _tL + _cL);
+        int innerY = Math.Max(0, _tT + _cT);
+        innerW = Math.Max(0, innerW - (_cL + _cR));
+        innerH = Math.Max(0, innerH - (_cT + _cB));
         if (innerW > 0 && innerH > 0) {
             var inner = new Rectangle(innerX, innerY, innerW, innerH);
             r.Exclude(inner); // cut a hole so only the border shows
@@ -190,22 +197,22 @@ try {
 }
 
 # Ensure DPI awareness so WinForms coordinates match GetWindowRect
-[OverlayNativeV4]::EnablePerMonitorDpi()
+[OverlayNativeV5]::EnablePerMonitorDpi()
 
 function Get-OpenWindows {
   $list = New-Object System.Collections.Generic.List[object]
-  [OverlayNativeV4]::EnumWindows({
+  [OverlayNativeV5]::EnumWindows({
     param([IntPtr]$h, [IntPtr]$p)
-    if (-not [OverlayNativeV4]::IsWindowVisible($h)) { return $true }
-    $len = [OverlayNativeV4]::GetWindowTextLength($h)
+    if (-not [OverlayNativeV5]::IsWindowVisible($h)) { return $true }
+    $len = [OverlayNativeV5]::GetWindowTextLength($h)
     if ($len -le 0) { return $true }
     $sb = New-Object System.Text.StringBuilder ($len + 1)
-    [void][OverlayNativeV4]::GetWindowText($h, $sb, $sb.Capacity)
+    [void][OverlayNativeV5]::GetWindowText($h, $sb, $sb.Capacity)
     $title = $sb.ToString()
     if ([string]::IsNullOrWhiteSpace($title)) { return $true }
 
-    [OverlayNativeV4+RECT]$r = New-Object 'OverlayNativeV4+RECT'
-    [void][OverlayNativeV4]::GetWindowRect($h, [ref]$r)
+    [OverlayNativeV5+RECT]$r = New-Object 'OverlayNativeV5+RECT'
+    [void][OverlayNativeV5]::GetWindowRect($h, [ref]$r)
     $ww = [Math]::Max(0, $r.Right - $r.Left)
     $hh = [Math]::Max(0, $r.Bottom - $r.Top)
     if ($ww -le 0 -or $hh -le 0) { return $true }
@@ -226,8 +233,8 @@ function Get-OpenWindows {
 function Get-WindowRectByHandle {
   param([Parameter(Mandatory)][IntPtr]$Handle)
   try {
-    [OverlayNativeV4+RECT]$r = New-Object 'OverlayNativeV4+RECT'
-    $ok = [OverlayNativeV4]::GetWindowRect($Handle, [ref]$r)
+    [OverlayNativeV5+RECT]$r = New-Object 'OverlayNativeV5+RECT'
+    $ok = [OverlayNativeV5]::GetWindowRect($Handle, [ref]$r)
     if (-not $ok) { return $null }
     $ww = [Math]::Max(0, $r.Right - $r.Left)
     $hh = [Math]::Max(0, $r.Bottom - $r.Top)
@@ -253,7 +260,7 @@ Write-Host "Overlaying '$($target.Title)' with ${Thickness}px black border. Pres
 
 if ($StripTitleBar) {
   # Remove caption/frame but keep same outer bounds
-  [OverlayNativeV4]::StripTitleBarKeepBounds($target.Handle, [int]$target.X, [int]$target.Y, [int]$target.Width, [int]$target.Height)
+  [OverlayNativeV5]::StripTitleBarKeepBounds($target.Handle, [int]$target.X, [int]$target.Y, [int]$target.Width, [int]$target.Height)
 }
 
 # Thickness per edge (thicker top when TopExtra>0)
@@ -263,7 +270,7 @@ $tR = [Math]::Max(1, $Thickness)
 $tB = [Math]::Max(1, $Thickness)
 
 # Create initial overlay and ensure it paints by pumping messages
-$overlay = New-Object BorderOverlayFormV4 @($target.X, $target.Y, $target.Width, $target.Height, $tL, $tT, $tR, $tB, $Cover)
+$overlay = New-Object BorderOverlayFormV5 @($target.X, $target.Y, $target.Width, $target.Height, $tL, $tT, $tR, $tB, [Math]::Max(0,$Cover), [Math]::Max(0,$Cover + $TopCoverExtra), [Math]::Max(0,$Cover), [Math]::Max(0,$Cover))
 $null = $overlay.Show()
 [System.Windows.Forms.Application]::DoEvents()
 Start-Sleep -Milliseconds 50
@@ -275,7 +282,7 @@ if ($Follow) {
       $rect = Get-WindowRectByHandle -Handle $target.Handle
       if (-not $rect) { break }
       if ($rect.X -ne $overlay.Left -or $rect.Y -ne $overlay.Top -or $rect.Width -ne $overlay.Width -or $rect.Height -ne $overlay.Height) {
-        $overlay.UpdateBoundsAndThickness($rect.X, $rect.Y, $rect.Width, $rect.Height, $tL, $tT, $tR, $tB, $Cover)
+        $overlay.UpdateBoundsAndThickness($rect.X, $rect.Y, $rect.Width, $rect.Height, $tL, $tT, $tR, $tB, [Math]::Max(0,$Cover), [Math]::Max(0,$Cover + $TopCoverExtra), [Math]::Max(0,$Cover), [Math]::Max(0,$Cover))
         $overlay.ForceTopMost()
       }
       [System.Windows.Forms.Application]::DoEvents()
