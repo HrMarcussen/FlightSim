@@ -409,6 +409,10 @@ function Start-OverlayForEntry {
   if ($Entry.PSObject.Properties.Match('BorderCover').Count -gt 0 -and $null -ne $Entry.BorderCover) {
     $cv = [int]$Entry.BorderCover
   }
+  $tcx = 0
+  if ($Entry.PSObject.Properties.Match('BorderTopCoverExtra').Count -gt 0 -and $null -ne $Entry.BorderTopCoverExtra) {
+    $tcx = [int]$Entry.BorderTopCoverExtra
+  }
   $st = $false
   if ($Entry.PSObject.Properties.Match('StripTitleBar').Count -gt 0 -and $null -ne $Entry.StripTitleBar) {
     $st = [bool]$Entry.StripTitleBar
@@ -427,6 +431,7 @@ function Start-OverlayForEntry {
     '-Thickness',"$th",
     '-TopExtra',"$tx",
     '-Cover',"$cv",
+    '-TopCoverExtra',"$tcx",
     '-TimeoutSec','30'
   )
   if ($st -and -not $SkipStripTitleBar) { $args += '-StripTitleBar' }
