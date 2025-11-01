@@ -15,6 +15,8 @@ Quick Start
   - `BorderTopExtra` (int): extra pixels for top only (to cover title bars)
   - `StripTitleBar` (bool): remove caption/frame from the target window; keeps bounds
   - `Follow` (bool): overlay follows the window when it moves/resizes
+  - `BorderCover` (int, optional): overlap (px) to shrink the inner overlay hole on all sides to hide 1px seams; default 2
+  - `BorderTopCoverExtra` (int, optional): extra overlap (px) added on the top side only (e.g., use 1–2 if a faint line shows only on top)
 - Apply layout and start overlays:
   - `./ToLiss-WindowLayout.ps1 -Action apply -LayoutPath ./TolissWindowLayout.json`
 
@@ -33,6 +35,7 @@ Notes
 Troubleshooting
 - No overlay? Ensure `BorderThickness > 0` or `StripTitleBar = true` in JSON and that the title substring matches the live window’s title.
 - Multi-monitor/scaling: the scripts enable per-monitor DPI awareness; if alignment seems off, confirm the monitor’s scaling and window positions in the JSON.
+- Faint top seam under the border? Set `BorderCover: 0–1` and add `BorderTopCoverExtra: 1–2` on entries where only the top edge shows a line.
 
 Compatibility
 
@@ -40,9 +43,10 @@ Compatibility
 
 Recent Fixes
 
-- More reliable sizing when applying layouts. After moving/resizing a window, the tool verifies the actual window rect and retries briefly (including a 1px nudge if needed) so the requested width/height are achieved.
-- If `StripTitleBar` is enabled, the tool reapplies the requested bounds shortly after starting the overlay so the final outer size matches the JSON on the first run.
+- More reliable sizing when applying layouts: multi-pass with stability checks and `SWP_FRAMECHANGED`, handle-targeted verification, and 3-phase apply (position → optional strip → reapply).
+- Quieter console output: per-entry summaries (positioned/stripped/resized/ok|mismatch).
+- Overlay seam control: `BorderCover` and `BorderTopCoverExtra` to hide 1px compositor/DPI seams.
 
 Version
 
-- 0.2.1 (2025-10-30)
+- 0.3.0 (2025-11-01)
