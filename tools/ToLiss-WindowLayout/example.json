@@ -1,0 +1,57 @@
+﻿[
+    {
+        "TitleLike":  "ToLiss Captain Left ",
+        "X":  2575,
+        "Y":  75,
+        "Width":  655,
+        "Height":  685,
+        "BorderThickness":  5,
+        "BorderTopExtra":  60,
+        "StripTitleBar":  false,
+        "Follow":  true,
+        "BorderCover": 1,
+        "BorderTopCoverExtra": 2
+    },
+    {
+        "TitleLike":  "ToLiss Captain Right",
+        "X":  3305,
+        "Y":  80,
+        "Width":  655,
+        "Height":  685,
+        "BorderThickness":  5,
+        "BorderTopExtra":  60,
+        "StripTitleBar":  false,
+        "Follow":  true,
+        "BorderCover": 1,
+        "BorderTopCoverExtra": 2
+    
+    },
+    {
+        "TitleLike":  "ToLiss Lower ECAM",
+        "X":  4117,
+        "Y":  745,
+        "Width":  600,
+        "Height":  635,
+        "BorderThickness":  30,
+        "BorderTopExtra":  40,
+        "StripTitleBar":  false,
+        "Follow":  true,
+        "BorderCover": 1,
+        "BorderTopCoverExtra": 2
+
+    },
+    {
+        "TitleLike":  "ToLiss Upper ECAM",
+        "X":  4117,
+        "Y":  45,
+        "Width":  600,
+        "Height":  635,
+        "BorderThickness":  30,
+        "BorderTopExtra":  40,
+        "StripTitleBar":  false,
+        "Follow":  true,
+        "BorderCover": 1,
+        "BorderTopCoverExtra": 2
+
+    }
+]
