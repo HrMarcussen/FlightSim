@@ -1,0 +1,17 @@
+<Window x:Class="FlightSimTool.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Overlay" Height="100" Width="100"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False">
+    <Grid>
+        <!-- Top Border -->
+        <Rectangle x:Name="BorderTop" Fill="Black" VerticalAlignment="Top" Height="8" />
+        <!-- Bottom Border -->
+        <Rectangle x:Name="BorderBottom" Fill="Black" VerticalAlignment="Bottom" Height="8" />
+        <!-- Left Border -->
+        <Rectangle x:Name="BorderLeft" Fill="Black" HorizontalAlignment="Left" Width="8" Margin="0,8,0,8" />
+        <!-- Right Border -->
+        <Rectangle x:Name="BorderRight" Fill="Black" HorizontalAlignment="Right" Width="8" Margin="0,8,0,8" />
+    </Grid>
+</Window>
