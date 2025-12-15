@@ -24,14 +24,7 @@ Remove caption/frame from the target window while keeping same bounds.
 
 .PARAMETER TimeoutSec
 How long to wait for the target window to appear.
-
-.EXAMPLE
-PS> .\Add-BlackBorderOverlay.ps1 -TitleLike "ToLiss Captain Left" -Thickness 8 -TopExtra 28 -Follow
-
-.EXAMPLE
-PS> .\Add-BlackBorderOverlay.ps1 -TitleLike "ToLiss ND" -StripTitleBar -Thickness 8 -Follow
 #>
-
 param(
   [Parameter(Mandatory)] [string]$TitleLike,
   [int]$Thickness = 8,
@@ -45,70 +38,31 @@ param(
 
 if ($Thickness -lt 1) { $Thickness = 1 }
 
+# Import shared common module
+$commonModule = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent)) 'Common\FlightSim.Common.psm1'
+if (Test-Path $commonModule) {
+  Import-Module $commonModule -ErrorAction Stop
+}
+else {
+  Write-Warning "FlightSim.Common module not found at $commonModule"
+}
+
 $pinvoke = @"
 using System;
 using System.Text;
 using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Windows.Forms;
+using FlightSim.Common;
 
-// V5 names to avoid stale type collisions between runs
 public static class OverlayNativeV5 {
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern int  GetWindowTextLength(IntPtr hWnd);
-    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-    [DllImport("user32.dll")] public static extern IntPtr SetProcessDpiAwarenessContext(IntPtr dpiContext);
-    [DllImport("user32.dll", EntryPoint = "GetWindowLong")] private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")] private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")] private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     public const UInt32 SWP_NOMOVE = 0x0002;
     public const UInt32 SWP_NOSIZE = 0x0001;
     public const UInt32 SWP_NOACTIVATE = 0x0010;
     public const UInt32 SWP_SHOWWINDOW = 0x0040;
-    public const UInt32 SWP_NOZORDER = 0x0004;
-    public const UInt32 SWP_FRAMECHANGED = 0x0020;
-    public const int GWL_STYLE = -16;
-    public const int WS_CAPTION = 0x00C00000;
-    public const int WS_THICKFRAME = 0x00040000;
-    public const int WS_SYSMENU = 0x00080000;
-    public const int WS_MINIMIZEBOX = 0x00020000;
-    public const int WS_MAXIMIZEBOX = 0x00010000;
-
-    public static void EnablePerMonitorDpi() {
-        try { SetProcessDpiAwarenessContext(new IntPtr(-4)); }
-        catch { try { SetProcessDPIAware(); } catch { } }
-    }
-
-    private static IntPtr GetWindowLongPtrSafe(IntPtr hWnd, int nIndex) {
-        if (IntPtr.Size == 8) return GetWindowLongPtr64(hWnd, nIndex);
-        return new IntPtr(GetWindowLong32(hWnd, nIndex));
-    }
-    private static IntPtr SetWindowLongPtrSafe(IntPtr hWnd, int nIndex, IntPtr newVal) {
-        if (IntPtr.Size == 8) return SetWindowLongPtr64(hWnd, nIndex, newVal);
-        return new IntPtr(SetWindowLong32(hWnd, nIndex, newVal.ToInt32()));
-    }
-
-    public static void StripTitleBarKeepBounds(IntPtr hWnd, int x, int y, int w, int h) {
-        try {
-            IntPtr stylePtr = GetWindowLongPtrSafe(hWnd, GWL_STYLE);
-            long style = stylePtr.ToInt64();
-            style &= ~(long)(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
-            SetWindowLongPtrSafe(hWnd, GWL_STYLE, new IntPtr(style));
-            SetWindowPos(hWnd, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
-        } catch { }
-    }
 }
 
 public class BorderOverlayFormV5 : Form {
@@ -191,57 +145,14 @@ public class BorderOverlayFormV5 : Form {
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing | Out-Null
 # Always try to add; ignore 'already exists' errors so reruns work
 try {
-  Add-Type -TypeDefinition $pinvoke -Language CSharp -ReferencedAssemblies System.Windows.Forms, System.Drawing -ErrorAction Stop | Out-Null
-} catch {
+  Add-Type -TypeDefinition $pinvoke -Language CSharp -ReferencedAssemblies System.Windows.Forms, System.Drawing, $commonModule -ErrorAction Stop | Out-Null
+}
+catch {
   if ($_.FullyQualifiedErrorId -notlike 'TYPE_ALREADY_EXISTS*') { throw }
 }
 
 # Ensure DPI awareness so WinForms coordinates match GetWindowRect
-[OverlayNativeV5]::EnablePerMonitorDpi()
-
-function Get-OpenWindows {
-  $list = New-Object System.Collections.Generic.List[object]
-  [OverlayNativeV5]::EnumWindows({
-    param([IntPtr]$h, [IntPtr]$p)
-    if (-not [OverlayNativeV5]::IsWindowVisible($h)) { return $true }
-    $len = [OverlayNativeV5]::GetWindowTextLength($h)
-    if ($len -le 0) { return $true }
-    $sb = New-Object System.Text.StringBuilder ($len + 1)
-    [void][OverlayNativeV5]::GetWindowText($h, $sb, $sb.Capacity)
-    $title = $sb.ToString()
-    if ([string]::IsNullOrWhiteSpace($title)) { return $true }
-
-    [OverlayNativeV5+RECT]$r = New-Object 'OverlayNativeV5+RECT'
-    [void][OverlayNativeV5]::GetWindowRect($h, [ref]$r)
-    $ww = [Math]::Max(0, $r.Right - $r.Left)
-    $hh = [Math]::Max(0, $r.Bottom - $r.Top)
-    if ($ww -le 0 -or $hh -le 0) { return $true }
-
-    $list.Add([pscustomobject]@{
-      Handle = $h
-      Title  = $title
-      X      = $r.Left
-      Y      = $r.Top
-      Width  = $ww
-      Height = $hh
-    }) | Out-Null
-    return $true
-  }, [IntPtr]::Zero) | Out-Null
-  $list
-}
-
-function Get-WindowRectByHandle {
-  param([Parameter(Mandatory)][IntPtr]$Handle)
-  try {
-    [OverlayNativeV5+RECT]$r = New-Object 'OverlayNativeV5+RECT'
-    $ok = [OverlayNativeV5]::GetWindowRect($Handle, [ref]$r)
-    if (-not $ok) { return $null }
-    $ww = [Math]::Max(0, $r.Right - $r.Left)
-    $hh = [Math]::Max(0, $r.Bottom - $r.Top)
-    if ($ww -le 0 -or $hh -le 0) { return $null }
-    return [pscustomobject]@{ X = $r.Left; Y = $r.Top; Width = $ww; Height = $hh }
-  } catch { return $null }
-}
+Enable-PerMonitorDpi
 
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $target = $null
@@ -260,7 +171,7 @@ Write-Host "Overlaying '$($target.Title)' with ${Thickness}px black border. Pres
 
 if ($StripTitleBar) {
   # Remove caption/frame but keep same outer bounds
-  [OverlayNativeV5]::StripTitleBarKeepBounds($target.Handle, [int]$target.X, [int]$target.Y, [int]$target.Width, [int]$target.Height)
+  [FlightSim.Common.Win32Native]::StripTitleBarKeepBounds($target.Handle, [int]$target.X, [int]$target.Y, [int]$target.Width, [int]$target.Height)
 }
 
 # Thickness per edge (thicker top when TopExtra>0)
@@ -269,38 +180,58 @@ $tT = [Math]::Max(1, $Thickness + $TopExtra)
 $tR = [Math]::Max(1, $Thickness)
 $tB = [Math]::Max(1, $Thickness)
 
-# Create initial overlay and ensure it paints by pumping messages
-$overlay = New-Object BorderOverlayFormV5 @($target.X, $target.Y, $target.Width, $target.Height, $tL, $tT, $tR, $tB, [Math]::Max(0,$Cover), [Math]::Max(0,$Cover + $TopCoverExtra), [Math]::Max(0,$Cover), [Math]::Max(0,$Cover))
-$null = $overlay.Show()
+# Create initial overlay and ensure it paints using a timer instead of a busy loop
+$overlay = New-Object BorderOverlayFormV5 @($target.X, $target.Y, $target.Width, $target.Height, $tL, $tT, $tR, $tB, [Math]::Max(0, $Cover), [Math]::Max(0, $Cover + $TopCoverExtra), [Math]::Max(0, $Cover), [Math]::Max(0, $Cover))
+$overlay.Show()
 [System.Windows.Forms.Application]::DoEvents()
 Start-Sleep -Milliseconds 50
 $overlay.ForceTopMost()
 
 if ($Follow) {
   try {
-    while ($true) {
-      $rect = Get-WindowRectByHandle -Handle $target.Handle
-      if (-not $rect) { break }
-      if ($rect.X -ne $overlay.Left -or $rect.Y -ne $overlay.Top -or $rect.Width -ne $overlay.Width -or $rect.Height -ne $overlay.Height) {
-        $overlay.UpdateBoundsAndThickness($rect.X, $rect.Y, $rect.Width, $rect.Height, $tL, $tT, $tR, $tB, [Math]::Max(0,$Cover), [Math]::Max(0,$Cover + $TopCoverExtra), [Math]::Max(0,$Cover), [Math]::Max(0,$Cover))
-        $overlay.ForceTopMost()
-      }
-      [System.Windows.Forms.Application]::DoEvents()
-      Start-Sleep -Milliseconds 100
-    }
-  } finally {
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 200 # Poll every 200ms
+    $timer.Add_Tick({
+        param($sender, $e)
+        $rect = Get-WindowRectByHandle -Handle $target.Handle
+        if (-not $rect) { 
+          $overlay.Close(); 
+          [System.Windows.Forms.Application]::Exit()
+          return 
+        }
+        
+        if ($rect.X -ne $overlay.Left -or $rect.Y -ne $overlay.Top -or $rect.Width -ne $overlay.Width -or $rect.Height -ne $overlay.Height) {
+          $overlay.UpdateBoundsAndThickness($rect.X, $rect.Y, $rect.Width, $rect.Height, $tL, $tT, $tR, $tB, [Math]::Max(0, $Cover), [Math]::Max(0, $Cover + $TopCoverExtra), [Math]::Max(0, $Cover), [Math]::Max(0, $Cover))
+          $overlay.ForceTopMost()
+        }
+      })
+    $timer.Start()
+     
+    # Start message loop
+    [System.Windows.Forms.Application]::Run($overlay)
+     
+  }
+  finally {
     if ($overlay) { $overlay.Close() }
   }
-} else {
+}
+else {
   # Keep overlay alive until the target window closes or user stops the script
   try {
-    while ($true) {
-      $rect = Get-WindowRectByHandle -Handle $target.Handle
-      if (-not $rect) { break }
-      [System.Windows.Forms.Application]::DoEvents()
-      Start-Sleep -Milliseconds 250
-    }
-  } finally {
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 1000 # Poll slower if not following updates strictly
+    $timer.Add_Tick({
+        param($sender, $e)
+        $rect = Get-WindowRectByHandle -Handle $target.Handle
+        if (-not $rect) {
+          $overlay.Close(); 
+          [System.Windows.Forms.Application]::Exit()
+        }
+      })
+    $timer.Start()
+    [System.Windows.Forms.Application]::Run($overlay)
+  }
+  finally {
     if ($overlay) { $overlay.Close() }
   }
 }

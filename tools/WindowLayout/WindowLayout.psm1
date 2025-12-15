@@ -3,96 +3,25 @@ WindowLayout PowerShell module
 Exports commands to capture and restore window layouts on Windows.
 #>
 
-# Guard native type definition so re-imports are safe
-$__typeLoaded = $true; try { [void][Win32Native] } catch { $__typeLoaded = $false }
-if (-not $__typeLoaded) {
-  Add-Type -TypeDefinition @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-
-public static class Win32Native {
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern int  GetWindowTextLength(IntPtr hWnd);
-    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-    [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-
-    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-    [DllImport("user32.dll")] public static extern IntPtr SetProcessDpiAwarenessContext(IntPtr dpiContext);
-    [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
-
-    public static readonly IntPtr HWND_TOP = IntPtr.Zero;
-    public const uint SWP_NOZORDER = 0x0004;
-    public const uint SWP_NOACTIVATE = 0x0010;
-    public const int  SW_RESTORE = 9;
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+# Import shared common module
+$commonModule = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent)) 'Common\FlightSim.Common.psm1'
+if (Test-Path $commonModule) {
+  Import-Module $commonModule -ErrorAction Stop
 }
-"@ -Language CSharp
-}
-
-function Enable-PerMonitorDpi {
-  [CmdletBinding()] param()
-  try { [void][Win32Native]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) } catch {
-    try { [void][Win32Native]::SetProcessDPIAware() } catch {}
-  }
-}
-
-function Get-OpenWindows {
-  [CmdletBinding()] param([switch]$VisibleOnly = $true)
-  $list = New-Object System.Collections.Generic.List[object]
-  [Win32Native]::EnumWindows({
-    param([IntPtr]$h, [IntPtr]$p)
-    if ($VisibleOnly -and -not [Win32Native]::IsWindowVisible($h)) { return $true }
-
-    $len = [Win32Native]::GetWindowTextLength($h)
-    if ($len -le 0) { return $true }
-    $sb = New-Object System.Text.StringBuilder ($len + 1)
-    [void][Win32Native]::GetWindowText($h, $sb, $sb.Capacity)
-    $title = $sb.ToString()
-    if ([string]::IsNullOrWhiteSpace($title)) { return $true }
-
-    $csb = New-Object System.Text.StringBuilder 256
-    [void][Win32Native]::GetClassName($h, $csb, $csb.Capacity)
-    $class = $csb.ToString()
-
-    [Win32Native+RECT]$r = New-Object 'Win32Native+RECT'
-    [void][Win32Native]::GetWindowRect($h, [ref]$r)
-    $ww = [Math]::Max(0, $r.Right - $r.Left)
-    $hh = [Math]::Max(0, $r.Bottom - $r.Top)
-    if ($ww -le 0 -or $hh -le 0) { return $true }
-    $obj = [pscustomobject]@{
-      Handle = $h
-      Title  = $title
-      Class  = $class
-      X      = $r.Left
-      Y      = $r.Top
-      Width  = $ww
-      Height = $hh
-    }
-    $list.Add($obj) | Out-Null
-    return $true
-  }, [IntPtr]::Zero) | Out-Null
-  $list
+else {
+  Write-Warning "FlightSim.Common module not found at $commonModule"
 }
 
 function Set-Window {
-  [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Medium')]
+  [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
   param(
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$TitleLike,
     [Parameter(Mandatory)][int]$X,
     [Parameter(Mandatory)][int]$Y,
-    [Parameter(Mandatory)][ValidateRange(1,[int]::MaxValue)][int]$Width,
-    [Parameter(Mandatory)][ValidateRange(1,[int]::MaxValue)][int]$Height,
+    [Parameter(Mandatory)][ValidateRange(1, [int]::MaxValue)][int]$Width,
+    [Parameter(Mandatory)][ValidateRange(1, [int]::MaxValue)][int]$Height,
     [switch]$FirstOnly,
-    [ValidateRange(1,600)][int]$TimeoutSec = 20
+    [ValidateRange(1, 600)][int]$TimeoutSec = 20
   )
   $deadline = (Get-Date).AddSeconds($TimeoutSec)
   do {
@@ -111,11 +40,11 @@ function Set-Window {
 
   foreach ($t in $targets) {
     if ($PSCmdlet.ShouldProcess($t.Title, "Move+Resize to $X,$Y ${Width}x${Height}")) {
-      [void][Win32Native]::ShowWindowAsync($t.Handle, [Win32Native]::SW_RESTORE)
-      $ok = [Win32Native]::SetWindowPos($t.Handle, [Win32Native]::HWND_TOP, $X, $Y, $Width, $Height,
-        [Win32Native]::SWP_NOZORDER -bor [Win32Native]::SWP_NOACTIVATE)
-      if ($ok) { Write-Verbose ("Placed '{0}' -> {1},{2} {3}x{4}" -f $t.Title,$X,$Y,$Width,$Height) }
-      else     { Write-Warning "Failed to position '$($t.Title)'." }
+      [void][FlightSim.Common.Win32Native]::ShowWindowAsync($t.Handle, [FlightSim.Common.Win32Native]::SW_RESTORE)
+      $ok = [FlightSim.Common.Win32Native]::SetWindowPos($t.Handle, [FlightSim.Common.Win32Native]::HWND_TOP, $X, $Y, $Width, $Height,
+        [FlightSim.Common.Win32Native]::SWP_NOZORDER -bor [FlightSim.Common.Win32Native]::SWP_NOACTIVATE)
+      if ($ok) { Write-Verbose ("Placed '{0}' -> {1},{2} {3}x{4}" -f $t.Title, $X, $Y, $Width, $Height) }
+      else { Write-Warning "Failed to position '$($t.Title)'." }
     }
   }
 }
@@ -151,7 +80,7 @@ function Show-WindowPickerCheckbox {
     foreach ($it in $Items) {
       $loc = '{0},{1}' -f $it.X, $it.Y
       $siz = '{0}x{1}' -f $it.Width, $it.Height
-      $lv  = New-Object System.Windows.Forms.ListViewItem($it.Title)
+      $lv = New-Object System.Windows.Forms.ListViewItem($it.Title)
       [void]$lv.SubItems.Add($it.Class)
       [void]$lv.SubItems.Add($loc)
       [void]$lv.SubItems.Add($siz)
@@ -167,13 +96,13 @@ function Show-WindowPickerCheckbox {
     $btnAll.Text = 'Select All'
     $btnAll.AutoSize = $true
     $btnAll.Location = New-Object System.Drawing.Point (12, 12)
-    $btnAll.Add_Click({ foreach($i in $list.Items){ $i.Checked = $true } })
+    $btnAll.Add_Click({ foreach ($i in $list.Items) { $i.Checked = $true } })
 
     $btnNone = New-Object System.Windows.Forms.Button
     $btnNone.Text = 'Select None'
     $btnNone.AutoSize = $true
     $btnNone.Location = New-Object System.Drawing.Point (120, 12)
-    $btnNone.Add_Click({ foreach($i in $list.Items){ $i.Checked = $false } })
+    $btnNone.Add_Click({ foreach ($i in $list.Items) { $i.Checked = $false } })
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = 'OK'
@@ -190,11 +119,11 @@ function Show-WindowPickerCheckbox {
     $btnCancel.Add_Click({ $form.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; $form.Close() })
 
     $form.Add_Resize({
-      $btnOk.Location = New-Object System.Drawing.Point ($form.ClientSize.Width - 190, 12)
-      $btnCancel.Location = New-Object System.Drawing.Point ($form.ClientSize.Width - 100, 12)
-    })
+        $btnOk.Location = New-Object System.Drawing.Point ($form.ClientSize.Width - 190, 12)
+        $btnCancel.Location = New-Object System.Drawing.Point ($form.ClientSize.Width - 100, 12)
+      })
 
-    $panel.Controls.AddRange(@($btnAll,$btnNone,$btnOk,$btnCancel))
+    $panel.Controls.AddRange(@($btnAll, $btnNone, $btnOk, $btnCancel))
     $form.Controls.Add($list)
     $form.Controls.Add($panel)
     $form.AcceptButton = $btnOk
@@ -203,22 +132,23 @@ function Show-WindowPickerCheckbox {
     $dlg = $form.ShowDialog()
     if ($dlg -ne [System.Windows.Forms.DialogResult]::OK) { return @() }
     $checked = @()
-    foreach($i in $list.Items){ if($i.Checked){ $checked += $i.Tag } }
-    return ,$checked
+    foreach ($i in $list.Items) { if ($i.Checked) { $checked += $i.Tag } }
+    return , $checked
   }
 
   if ([System.Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
     $result = New-Object System.Collections.ArrayList
     $t = New-Object System.Threading.Thread({ param($s)
-      $sb=$s[0]; $items=$s[1]; $out=$s[2]
-      $res = & $sb $items
-      if ($res -ne $null) { [void]$out.AddRange(@($res)) }
-    })
+        $sb = $s[0]; $items = $s[1]; $out = $s[2]
+        $res = & $sb $items
+        if ($res -ne $null) { [void]$out.AddRange(@($res)) }
+      })
     $t.SetApartmentState('STA'); $t.IsBackground = $true
     $t.Start(@($scriptBlock, $Items, $result))
     $t.Join()
     return @($result.ToArray())
-  } else {
+  }
+  else {
     return & $scriptBlock $Items
   }
 }
@@ -226,7 +156,7 @@ function Show-WindowPickerCheckbox {
 function Select-WindowsInteractive {
   [CmdletBinding()]
   param(
-    [ValidateSet('OGV','Forms','Console')][string]$Picker = 'OGV'
+    [ValidateSet('OGV', 'Forms', 'Console')][string]$Picker = 'OGV'
   )
   $all = Get-OpenWindows | Sort-Object Title
 
@@ -235,7 +165,7 @@ function Select-WindowsInteractive {
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
   if ($ogv) {
-    $picked = $all | Select-Object Title,Class,X,Y,Width,Height | Out-GridView -Title "Select windows to capture, then click OK" -PassThru
+    $picked = $all | Select-Object Title, Class, X, Y, Width, Height | Out-GridView -Title "Select windows to capture, then click OK" -PassThru
     if (-not $picked) { return @() }
     return $picked
   }
@@ -250,7 +180,7 @@ function Select-WindowsInteractive {
   $ans = Read-Host "`nEnter indices (e.g. 0,3,4)"
   if ([string]::IsNullOrWhiteSpace($ans)) { return @() }
   $want = $ans -split '[^0-9]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ }
-  $sel  = foreach ($i in $want) { if ($i -ge 0 -and $i -lt $all.Count) { $all[$i] } }
+  $sel = foreach ($i in $want) { if ($i -ge 0 -and $i -lt $all.Count) { $all[$i] } }
   return $sel
 }
 
@@ -269,7 +199,7 @@ function Suggest-TitleLikeSimple([string]$title) {
 function Capture-Layout {
   [CmdletBinding()]
   param(
-    [ValidateSet('OGV','Forms','Console')][string]$Picker = 'OGV'
+    [ValidateSet('OGV', 'Forms', 'Console')][string]$Picker = 'OGV'
   )
   $picked = Select-WindowsInteractive -Picker $Picker 
   if (-not $picked -or $picked.Count -eq 0) {
@@ -296,8 +226,10 @@ function Capture-Layout {
     if ($script:LayoutPath.Count -gt 0) {
       if ($script:LayoutPath.Count -gt 1) { Write-Warning "Multiple LayoutPath values provided; using first: $($script:LayoutPath[0])" }
       $script:LayoutPath[0]
-    } else { "WindowLayout.json" }
-  } else { $script:LayoutPath }
+    }
+    else { "WindowLayout.json" }
+  }
+  else { $script:LayoutPath }
   if (-not $targetPath) { $targetPath = "WindowLayout.json" }
 
   try {
@@ -306,7 +238,8 @@ function Capture-Layout {
     $layout | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $targetPath
     Write-Verbose ("Saved layout to {0}" -f $targetPath)
     Write-Host "Saved layout ($($layout.Count) entries) -> $targetPath"
-  } catch {
+  }
+  catch {
     Write-Error "Failed to write layout '$targetPath': $($_.Exception.Message)"
   }
 }
@@ -327,7 +260,8 @@ function Apply-Layout {
     }
     try {
       $layout = Get-Content -Path $path -Raw | ConvertFrom-Json -ErrorAction Stop
-    } catch {
+    }
+    catch {
       Write-Warning "Failed to parse layout JSON '$path': $($_.Exception.Message)"
       continue
     }
@@ -338,7 +272,7 @@ function Apply-Layout {
     $count = 0
     foreach ($w in $layout) {
       if (-not $w.TitleLike) { Write-Warning "Missing TitleLike in entry; skipping."; continue }
-      try { $x=[int]$w.X; $y=[int]$w.Y; $wth=[int]$w.Width; $hgt=[int]$w.Height }
+      try { $x = [int]$w.X; $y = [int]$w.Y; $wth = [int]$w.Width; $hgt = [int]$w.Height }
       catch { Write-Warning "Invalid numeric values in entry for '$($w.TitleLike)'; skipping."; continue }
       if ($wth -le 0 -or $hgt -le 0) { Write-Warning "Non-positive size for '$($w.TitleLike)'; skipping."; continue }
       Set-Window -TitleLike $w.TitleLike -X $x -Y $y -Width $wth -Height $hgt -TimeoutSec 20
@@ -354,10 +288,10 @@ function Apply-Layout {
 }
 
 function Export-WindowLayout {
-  [CmdletBinding(SupportsShouldProcess=$true)]
+  [CmdletBinding(SupportsShouldProcess = $true)]
   param(
     [Parameter()][ValidateNotNullOrEmpty()][string[]]$LayoutPath = "WindowLayout.json",
-    [ValidateSet('OGV','Forms','Console')][string]$Picker = 'OGV'
+    [ValidateSet('OGV', 'Forms', 'Console')][string]$Picker = 'OGV'
   )
   $script:LayoutPath = $LayoutPath
   Enable-PerMonitorDpi
@@ -365,5 +299,4 @@ function Export-WindowLayout {
 }
 
 
-Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Export-WindowLayout, Restore-WindowLayout
-
+Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Export-WindowLayout, Apply-Layout

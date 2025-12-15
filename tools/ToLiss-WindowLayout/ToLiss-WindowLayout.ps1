@@ -1,4 +1,4 @@
-# WindowLayout.ps1
+# ToLiss-WindowLayout.ps1
 <#
 .SYNOPSIS
 Captures and applies window layouts for any Windows desktop apps (e.g., X-Plane, MSFS).
@@ -24,86 +24,16 @@ Apply positions/sizes from WindowLayout.json
 #>
 param(
   [string[]]$LayoutPath = "WindowLayout.json",
-  [ValidateSet("capture","apply","overlays","stop-overlays")] [string]$Action = "capture"
+  [ValidateSet("capture", "apply", "overlays", "stop-overlays")] [string]$Action = "capture"
 )
-# --- Single, self-contained type (no duplicate 'using' issues) ---
-$code = @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
 
-public static class Win32NativeV2 {
-    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
-    [DllImport("user32.dll")] public static extern int  GetWindowTextLength(IntPtr hWnd);
-    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-    [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-    [DllImport("user32.dll", EntryPoint = "GetWindowLong")] private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr")] private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr")] private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-    // DPI awareness (best effort; older OS will ignore)
-    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-    [DllImport("user32.dll")] public static extern IntPtr SetProcessDpiAwarenessContext(IntPtr dpiContext);
-
-    public static readonly IntPtr HWND_TOP = IntPtr.Zero;
-    public const uint SWP_NOZORDER = 0x0004;
-    public const uint SWP_NOACTIVATE = 0x0010;
-    public const uint SWP_FRAMECHANGED = 0x0020;
-    public const uint SWP_SHOWWINDOW = 0x0040;
-    public const int  SW_RESTORE = 9;
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-
-    public const int GWL_STYLE = -16;
-    public const int WS_CAPTION = 0x00C00000;
-    public const int WS_THICKFRAME = 0x00040000;
-    public const int WS_SYSMENU = 0x00080000;
-    public const int WS_MINIMIZEBOX = 0x00020000;
-    public const int WS_MAXIMIZEBOX = 0x00010000;
-
-    private static IntPtr GetWindowLongPtrSafe(IntPtr hWnd, int nIndex) {
-        if (IntPtr.Size == 8) return GetWindowLongPtr64(hWnd, nIndex);
-        return new IntPtr(GetWindowLong32(hWnd, nIndex));
-    }
-    private static IntPtr SetWindowLongPtrSafe(IntPtr hWnd, int nIndex, IntPtr newVal) {
-        if (IntPtr.Size == 8) return SetWindowLongPtr64(hWnd, nIndex, newVal);
-        return new IntPtr(SetWindowLong32(hWnd, nIndex, newVal.ToInt32()));
-    }
-
-    public static void StripTitleBarKeepBounds(IntPtr hWnd, int x, int y, int w, int h) {
-        try {
-            IntPtr stylePtr = GetWindowLongPtrSafe(hWnd, GWL_STYLE);
-            long style = stylePtr.ToInt64();
-            style &= ~(long)(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
-            SetWindowLongPtrSafe(hWnd, GWL_STYLE, new IntPtr(style));
-            SetWindowPos(hWnd, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
-        } catch { }
-    }
+# Import shared common module
+$commonModule = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent)) 'Common\FlightSim.Common.psm1'
+if (Test-Path $commonModule) {
+  Import-Module $commonModule -ErrorAction Stop
 }
-"@
-
-try {
-  Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop | Out-Null
-} catch {
-  if ($_.FullyQualifiedErrorId -notlike 'TYPE_ALREADY_EXISTS*') { throw }
-}
-
-<#
-.SYNOPSIS
-Enable best-effort per-monitor DPI awareness (v2 if supported).
-#>
-function Enable-PerMonitorDpi {
-  try { [void][Win32NativeV2]::SetProcessDpiAwarenessContext([IntPtr]::new(-4)) } catch {
-    try { [void][Win32NativeV2]::SetProcessDPIAware() } catch {}
-  }
+else {
+  Write-Warning "FlightSim.Common module not found at $commonModule"
 }
 
 # Script directory for locating helper scripts (PS5.1-safe)
@@ -114,73 +44,7 @@ if (-not $script:ToolDir) {
 
 <#
 .SYNOPSIS
-Enumerate open top-level windows.
-
-.PARAMETER VisibleOnly
-Return only visible windows (default).
-#>
-function Get-OpenWindows {
-  param([switch]$VisibleOnly = $true)
-  $list = New-Object System.Collections.Generic.List[object]
-  [Win32NativeV2]::EnumWindows({
-    param([IntPtr]$h, [IntPtr]$p)
-    if ($VisibleOnly -and -not [Win32NativeV2]::IsWindowVisible($h)) { return $true }
-
-    $len = [Win32NativeV2]::GetWindowTextLength($h)
-    if ($len -le 0) { return $true }
-    $sb = New-Object System.Text.StringBuilder ($len + 1)
-    [void][Win32NativeV2]::GetWindowText($h, $sb, $sb.Capacity)
-    $title = $sb.ToString()
-    if ([string]::IsNullOrWhiteSpace($title)) { return $true }
-
-    $csb = New-Object System.Text.StringBuilder 256
-    [void][Win32NativeV2]::GetClassName($h, $csb, $csb.Capacity)
-    $class = $csb.ToString()
-
-    [Win32NativeV2+RECT]$r = New-Object 'Win32NativeV2+RECT'
-    [void][Win32NativeV2]::GetWindowRect($h, [ref]$r)
-    $ww = [Math]::Max(0, $r.Right - $r.Left)
-    $hh = [Math]::Max(0, $r.Bottom - $r.Top)
-    if ($ww -le 0 -or $hh -le 0) { return $true }
-    $obj = [pscustomobject]@{
-      Handle = $h
-      Title  = $title
-      Class  = $class
-      X      = $r.Left
-      Y      = $r.Top
-      Width  = $ww
-      Height = $hh
-    }
-    $list.Add($obj) | Out-Null
-    return $true
-  }, [IntPtr]::Zero) | Out-Null
-  $list
-}
-
-<#
-.SYNOPSIS
 Position and resize windows matching a partial title.
-
-.PARAMETER TitleLike
-Substring to match window titles with PowerShell -like (wildcards added automatically).
-
-.PARAMETER X
-Left coordinate.
-
-.PARAMETER Y
-Top coordinate.
-
-.PARAMETER Width
-Window width.
-
-.PARAMETER Height
-Window height.
-
-.PARAMETER FirstOnly
-If set, only position the first matched window.
-
-.PARAMETER TimeoutSec
-How long to wait for a matching window to appear.
 #>
 function Set-Window {
   param(
@@ -200,15 +64,16 @@ function Set-Window {
   $targets = @()
   if ($Handle) {
     # Build a single target from handle, enrich with title for logs
-    [Win32NativeV2+RECT]$r0 = New-Object 'Win32NativeV2+RECT'
-    $ok0 = [Win32NativeV2]::GetWindowRect($Handle, [ref]$r0)
+    [FlightSim.Common.Win32Native+RECT]$r0 = New-Object 'FlightSim.Common.Win32Native+RECT'
+    $ok0 = [FlightSim.Common.Win32Native]::GetWindowRect($Handle, [ref]$r0)
     if ($ok0) {
-      $len = [Win32NativeV2]::GetWindowTextLength($Handle)
+      $len = [FlightSim.Common.Win32Native]::GetWindowTextLength($Handle)
       $title = ''
-      if ($len -gt 0) { $sb = New-Object System.Text.StringBuilder ($len + 1); [void][Win32NativeV2]::GetWindowText($Handle, $sb, $sb.Capacity); $title = $sb.ToString() }
-      $targets = @([pscustomobject]@{ Handle=$Handle; Title=$title })
+      if ($len -gt 0) { $sb = New-Object System.Text.StringBuilder ($len + 1); [void][FlightSim.Common.Win32Native]::GetWindowText($Handle, $sb, $sb.Capacity); $title = $sb.ToString() }
+      $targets = @([pscustomobject]@{ Handle = $Handle; Title = $title })
     }
-  } else {
+  }
+  else {
     do {
       $targets = Get-OpenWindows | Where-Object { $_.Title -like "*$TitleLike*" }
       if ($targets) {
@@ -225,35 +90,35 @@ function Set-Window {
 
   $results = @()
   foreach ($t in $targets) {
-    [void][Win32NativeV2]::ShowWindowAsync($t.Handle, [Win32NativeV2]::SW_RESTORE)
+    [void][FlightSim.Common.Win32Native]::ShowWindowAsync($t.Handle, [FlightSim.Common.Win32Native]::SW_RESTORE)
 
-    $flags = [Win32NativeV2]::SWP_NOZORDER -bor [Win32NativeV2]::SWP_NOACTIVATE
+    $flags = [FlightSim.Common.Win32Native]::SWP_NOZORDER -bor [FlightSim.Common.Win32Native]::SWP_NOACTIVATE
     $attempt = 0
     $placed = $false
     do {
       $attempt++
       $w = $Width; $h = $Height; $x = $X; $y = $Y
-      $flagsTry = ($flags -bor [Win32NativeV2]::SWP_FRAMECHANGED)
+      $flagsTry = ($flags -bor [FlightSim.Common.Win32Native]::SWP_FRAMECHANGED)
       if ($attempt -ge 3) {
         # Nudge size and force non-client frame recalculation
-        [void][Win32NativeV2]::SetWindowPos($t.Handle, [Win32NativeV2]::HWND_TOP, $x, $y, ($w + 1), $h, $flagsTry)
+        [void][FlightSim.Common.Win32Native]::SetWindowPos($t.Handle, [FlightSim.Common.Win32Native]::HWND_TOP, $x, $y, ($w + 1), $h, $flagsTry)
         Start-Sleep -Milliseconds 80
       }
 
-      $ok = [Win32NativeV2]::SetWindowPos($t.Handle, [Win32NativeV2]::HWND_TOP, $x, $y, $w, $h, $flagsTry)
+      $ok = [FlightSim.Common.Win32Native]::SetWindowPos($t.Handle, [FlightSim.Common.Win32Native]::HWND_TOP, $x, $y, $w, $h, $flagsTry)
       if (-not $ok) { break }
 
       Start-Sleep -Milliseconds 100
       # Verify current rect
-      [Win32NativeV2+RECT]$r = New-Object 'Win32NativeV2+RECT'
-      [void][Win32NativeV2]::GetWindowRect($t.Handle, [ref]$r)
+      [FlightSim.Common.Win32Native+RECT]$r = New-Object 'FlightSim.Common.Win32Native+RECT'
+      [void][FlightSim.Common.Win32Native]::GetWindowRect($t.Handle, [ref]$r)
       $cw = [Math]::Max(0, $r.Right - $r.Left)
       $ch = [Math]::Max(0, $r.Bottom - $r.Top)
       if ([Math]::Abs($cw - $w) -le 1 -and [Math]::Abs($ch - $h) -le 1) {
         # Require stability across a short delay to avoid races with style changes
         Start-Sleep -Milliseconds 150
-        [Win32NativeV2+RECT]$r2 = New-Object 'Win32NativeV2+RECT'
-        [void][Win32NativeV2]::GetWindowRect($t.Handle, [ref]$r2)
+        [FlightSim.Common.Win32Native+RECT]$r2 = New-Object 'FlightSim.Common.Win32Native+RECT'
+        [void][FlightSim.Common.Win32Native]::GetWindowRect($t.Handle, [ref]$r2)
         $cw2 = [Math]::Max(0, $r2.Right - $r2.Left)
         $ch2 = [Math]::Max(0, $r2.Bottom - $r2.Top)
         if ([Math]::Abs($cw2 - $w) -le 1 -and [Math]::Abs($ch2 - $h) -le 1) {
@@ -265,16 +130,16 @@ function Set-Window {
 
     if (-not $Quiet) {
       if ($placed) { Write-Host "Placed '$($t.Title)' -> $X,$Y ${Width}x${Height}" }
-      else         { Write-Warning "Failed to precisely size '$($t.Title)' (tried $attempt)." }
+      else { Write-Warning "Failed to precisely size '$($t.Title)' (tried $attempt)." }
     }
     # Collect final rect
-    [Win32NativeV2+RECT]$rf = New-Object 'Win32NativeV2+RECT'
-    [void][Win32NativeV2]::GetWindowRect($t.Handle, [ref]$rf)
+    [FlightSim.Common.Win32Native+RECT]$rf = New-Object 'FlightSim.Common.Win32Native+RECT'
+    [void][FlightSim.Common.Win32Native]::GetWindowRect($t.Handle, [ref]$rf)
     $fw = [Math]::Max(0, $rf.Right - $rf.Left)
     $fh = [Math]::Max(0, $rf.Bottom - $rf.Top)
-    $results += [pscustomobject]@{ Handle=$t.Handle; Title=$t.Title; X=$rf.Left; Y=$rf.Top; Width=$fw; Height=$fh }
+    $results += [pscustomobject]@{ Handle = $t.Handle; Title = $t.Title; X = $rf.Left; Y = $rf.Top; Width = $fw; Height = $fh }
   }
-  if ($ReturnResults) { return ,$results } else { return }
+  if ($ReturnResults) { return , $results } else { return }
 }
 
 <#
@@ -287,8 +152,8 @@ function Select-WindowsInteractive {
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
   if ($ogv) {
     $picked = $all |
-      Select-Object Title,Class,X,Y,Width,Height |
-      Out-GridView -Title "Select windows to capture, then click OK" -PassThru
+    Select-Object Title, Class, X, Y, Width, Height |
+    Out-GridView -Title "Select windows to capture, then click OK" -PassThru
     if (-not $picked) { return @() }
     return $picked
   }
@@ -303,22 +168,8 @@ function Select-WindowsInteractive {
   $ans = Read-Host "`nEnter indices (e.g. 0,3,4)"
   if ([string]::IsNullOrWhiteSpace($ans)) { return @() }
   $want = $ans -split '[^0-9]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ }
-  $sel  = foreach ($i in $want) { if ($i -ge 0 -and $i -lt $all.Count) { $all[$i] } }
+  $sel = foreach ($i in $want) { if ($i -ge 0 -and $i -lt $all.Count) { $all[$i] } }
   return $sel
-}
-
-
-<#
-.SYNOPSIS
-Get window rect by handle.
-#>
-function Get-WindowRectByHandle {
-  param([Parameter(Mandatory)][IntPtr]$Handle)
-  [Win32NativeV2+RECT]$rr = New-Object 'Win32NativeV2+RECT'
-  if (-not [Win32NativeV2]::GetWindowRect($Handle, [ref]$rr)) { return $null }
-  $ww = [Math]::Max(0, $rr.Right - $rr.Left)
-  $hh = [Math]::Max(0, $rr.Bottom - $rr.Top)
-  return [pscustomobject]@{ X=$rr.Left; Y=$rr.Top; Width=$ww; Height=$hh }
 }
 
 
@@ -363,11 +214,11 @@ function Capture-Layout {
     if ([string]::IsNullOrWhiteSpace($input)) { $input = $default }
 
     $layout += [pscustomobject]@{
-      TitleLike = $input
-      X         = [int]$w.X
-      Y         = [int]$w.Y
-      Width     = [int]$w.Width
-      Height    = [int]$w.Height
+      TitleLike       = $input
+      X               = [int]$w.X
+      Y               = [int]$w.Y
+      Width           = [int]$w.Width
+      Height          = [int]$w.Height
       BorderThickness = 8
       BorderTopExtra  = 0
       StripTitleBar   = $false
@@ -379,8 +230,10 @@ function Capture-Layout {
     if ($LayoutPath.Count -gt 0) {
       if ($LayoutPath.Count -gt 1) { Write-Warning "Multiple LayoutPath values provided; using first: $($LayoutPath[0])" }
       $LayoutPath[0]
-    } else { ".\\WindowLayout.json" }
-  } else { $LayoutPath }
+    }
+    else { ".\\WindowLayout.json" }
+  }
+  else { $LayoutPath }
   $layout | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 -Path $targetPath
   Write-Host "Saved layout ($($layout.Count) entries) -> $targetPath"
 }
@@ -426,13 +279,13 @@ function Start-OverlayForEntry {
   if ([string]::IsNullOrWhiteSpace($Entry.TitleLike)) { return }
 
   $args = @(
-    '-NoProfile','-ExecutionPolicy','Bypass','-File',"$overlayScript",
-    '-TitleLike',"$($Entry.TitleLike)",
-    '-Thickness',"$th",
-    '-TopExtra',"$tx",
-    '-Cover',"$cv",
-    '-TopCoverExtra',"$tcx",
-    '-TimeoutSec','30'
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$overlayScript",
+    '-TitleLike', "$($Entry.TitleLike)",
+    '-Thickness', "$th",
+    '-TopExtra', "$tx",
+    '-Cover', "$cv",
+    '-TopCoverExtra', "$tcx",
+    '-TimeoutSec', '30'
   )
   if ($st -and -not $SkipStripTitleBar) { $args += '-StripTitleBar' }
   if ($fw) { $args += '-Follow' }
@@ -468,7 +321,8 @@ function Apply-Layout {
     }
     try {
       $layout = Get-Content -Path $path -Raw | ConvertFrom-Json -ErrorAction Stop
-    } catch {
+    }
+    catch {
       Write-Warning "Failed to parse layout JSON '$path': $($_.Exception.Message)"
       continue
     }
@@ -496,7 +350,7 @@ function Apply-Layout {
         $doStrip = $false
         try { $doStrip = [bool]$w.StripTitleBar } catch {}
         if ($doStrip -and $handles.ContainsKey($key)) {
-          [Win32NativeV2]::StripTitleBarKeepBounds($handles[$key], [int]$w.X, [int]$w.Y, [int]$w.Width, [int]$w.Height)
+          [FlightSim.Common.Win32Native]::StripTitleBarKeepBounds($handles[$key], [int]$w.X, [int]$w.Y, [int]$w.Width, [int]$w.Height)
           Start-Sleep -Milliseconds 150
           $wasStripped[$key] = $true
         }
@@ -524,17 +378,18 @@ function Apply-Layout {
           try { $isStripped = [bool]$w.StripTitleBar } catch {}
           if (-not $isStripped) { continue }
           $okNow = $false
-          for ($i=0; $i -lt 5; $i++) {
-            Start-Sleep -Milliseconds (200 + ($i*250))
+          for ($i = 0; $i -lt 5; $i++) {
+            Start-Sleep -Milliseconds (200 + ($i * 250))
             if ($handles.ContainsKey("$($w.TitleLike)")) {
               Set-Window -Handle $handles["$($w.TitleLike)"] -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -Quiet
-            } else {
+            }
+            else {
               Set-Window -TitleLike $w.TitleLike -X $w.X -Y $w.Y -Width $w.Width -Height $w.Height -TimeoutSec 10 -FirstOnly -Quiet
             }
             $reapplyCount["$($w.TitleLike)"] = $reapplyCount["$($w.TitleLike)"] + 1
             # Verify actual rect and require stability across two reads
             $okOnce = $false
-            for ($p=0; $p -lt 2; $p++) {
+            for ($p = 0; $p -lt 2; $p++) {
               Start-Sleep -Milliseconds 150
               if ($handles.ContainsKey("$($w.TitleLike)") ) { $cur = Get-WindowRectByHandle -Handle $handles["$($w.TitleLike)"] }
               else { $cur = Get-OpenWindows | Where-Object { $_.Title -like "*$($w.TitleLike)*" } | Select-Object -First 1 }
@@ -597,7 +452,8 @@ function Stop-AllOverlays {
   if ($procs) {
     $procs | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }
     Write-Host "Stopped $($procs.Count) overlay process(es)."
-  } else {
+  }
+  else {
     Write-Host "No overlay processes found."
   }
 }
@@ -606,7 +462,7 @@ function Stop-AllOverlays {
 Enable-PerMonitorDpi
 switch ($Action) {
   "capture" { Capture-Layout }
-  "apply"   { Apply-Layout }
+  "apply" { Apply-Layout }
   "overlays" { Apply-OverlaysOnly }
   "stop-overlays" { Stop-AllOverlays }
 }
