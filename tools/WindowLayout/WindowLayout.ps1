@@ -26,7 +26,7 @@ Apply positions/sizes from WindowLayout.json
 #>
 param(
   [string[]]$LayoutPath = "WindowLayout.json",
-  [ValidateSet("capture","apply")] [string]$Action = "capture"
+  [ValidateSet("capture", "apply")] [string]$Action = "capture"
 )
 
 Import-Module -Force -ErrorAction Stop (Join-Path -Path $PSScriptRoot -ChildPath 'WindowLayout.psd1')
@@ -34,6 +34,6 @@ Import-Module -Force -ErrorAction Stop (Join-Path -Path $PSScriptRoot -ChildPath
 $script:LayoutPath = $LayoutPath
 Enable-PerMonitorDpi
 switch ($Action) {
-  "capture" { Capture-Layout }
-  "apply"   { Apply-Layout }
+  "capture" { Export-WindowLayout }
+  "apply" { Restore-WindowLayout }
 }

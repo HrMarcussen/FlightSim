@@ -185,9 +185,8 @@ Extract a stable prefix from a full window title.
 Splits on common separators (e.g., " - ", " | ", ": ") and
 returns the part before the separator; otherwise caps to 20 chars.
 #>
-function Suggest-TitleLikeSimple([string]$title) {
+function Get-TitleSuggestion([string]$title) {
   if ([string]::IsNullOrWhiteSpace($title)) { return "" }
-  $separators = @(' - ', ' | ', ': ')
   foreach ($sep in (Get-AsciiSeparators)) {
     $idx = $title.IndexOf($sep)
     if ($idx -gt 0) { return $title.Substring(0, $idx).Trim() }
@@ -200,7 +199,7 @@ function Suggest-TitleLikeSimple([string]$title) {
 .SYNOPSIS
 Interactively select windows and save their positions to JSON.
 #>
-function Capture-Layout {
+function Save-WindowLayout {
   $picked = Select-WindowsInteractive
   if (-not $picked -or $picked.Count -eq 0) {
     Write-Warning "Nothing selected."
@@ -209,12 +208,12 @@ function Capture-Layout {
 
   $layout = @()
   foreach ($w in $picked) {
-    $default = Suggest-TitleLikeSimple $w.Title
-    $input = Read-Host ("TitleLike for '{0}' (Enter to accept: {1})" -f $w.Title, $default)
-    if ([string]::IsNullOrWhiteSpace($input)) { $input = $default }
+    $default = Get-TitleSuggestion $w.Title
+    $titleInput = Read-Host ("TitleLike for '{0}' (Enter to accept: {1})" -f $w.Title, $default)
+    if ([string]::IsNullOrWhiteSpace($titleInput)) { $titleInput = $default }
 
     $layout += [pscustomobject]@{
-      TitleLike       = $input
+      TitleLike       = $titleInput
       X               = [int]$w.X
       Y               = [int]$w.Y
       Width           = [int]$w.Width
@@ -278,7 +277,7 @@ function Start-OverlayForEntry {
   if ($th -le 0 -and -not $st) { return }
   if ([string]::IsNullOrWhiteSpace($Entry.TitleLike)) { return }
 
-  $args = @(
+  $launchArgs = @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$overlayScript",
     '-TitleLike', "$($Entry.TitleLike)",
     '-Thickness', "$th",
@@ -287,12 +286,12 @@ function Start-OverlayForEntry {
     '-TopCoverExtra', "$tcx",
     '-TimeoutSec', '30'
   )
-  if ($st -and -not $SkipStripTitleBar) { $args += '-StripTitleBar' }
-  if ($fw) { $args += '-Follow' }
+  if ($st -and -not $SkipStripTitleBar) { $launchArgs += '-StripTitleBar' }
+  if ($fw) { $launchArgs += '-Follow' }
 
   # Build a single argument string for robust quoting on PS5.1
   $argString = @()
-  foreach ($a in $args) {
+  foreach ($a in $launchArgs) {
     if ($a -match '\s') { $argString += ('"' + $a + '"') } else { $argString += $a }
   }
   $argString = ($argString -join ' ')
@@ -306,7 +305,7 @@ Read JSON layout and position matching windows.
 .DESCRIPTION
 Supports applying multiple layout files in one run.
 #>
-function Apply-Layout {
+function Restore-WindowLayout {
   $paths = @($LayoutPath)
   if (-not $paths -or $paths.Count -eq 0) {
     Write-Warning "No layout path(s) provided."
@@ -433,7 +432,7 @@ function Apply-Layout {
 .SYNOPSIS
 Launch overlays only from a layout without moving windows.
 #>
-function Apply-OverlaysOnly {
+function Start-OverlayProcess {
   $paths = @($LayoutPath)
   if (-not $paths -or $paths.Count -eq 0) { return }
   foreach ($path in $paths) {
@@ -461,8 +460,8 @@ function Stop-AllOverlays {
 # --- MAIN ---
 Enable-PerMonitorDpi
 switch ($Action) {
-  "capture" { Capture-Layout }
-  "apply" { Apply-Layout }
-  "overlays" { Apply-OverlaysOnly }
+  "capture" { Save-WindowLayout }
+  "apply" { Restore-WindowLayout }
+  "overlays" { Start-OverlayProcess }
   "stop-overlays" { Stop-AllOverlays }
 }

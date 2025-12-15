@@ -192,7 +192,7 @@ if ($Follow) {
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 200 # Poll every 200ms
     $timer.Add_Tick({
-        param($sender, $e)
+        param($objSender, $e)
         $rect = Get-WindowRectByHandle -Handle $target.Handle
         if (-not $rect) { 
           $overlay.Close(); 
@@ -221,7 +221,7 @@ else {
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 1000 # Poll slower if not following updates strictly
     $timer.Add_Tick({
-        param($sender, $e)
+        param($objSender, $e)
         $rect = Get-WindowRectByHandle -Handle $target.Handle
         if (-not $rect) {
           $overlay.Close(); 

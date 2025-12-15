@@ -141,7 +141,7 @@ function Show-WindowPickerCheckbox {
     $t = New-Object System.Threading.Thread({ param($s)
         $sb = $s[0]; $items = $s[1]; $out = $s[2]
         $res = & $sb $items
-        if ($res -ne $null) { [void]$out.AddRange(@($res)) }
+        if ($null -ne $res) { [void]$out.AddRange(@($res)) }
       })
     $t.SetApartmentState('STA'); $t.IsBackground = $true
     $t.Start(@($scriptBlock, $Items, $result))
@@ -161,7 +161,7 @@ function Select-WindowsInteractive {
   $all = Get-OpenWindows | Sort-Object Title
 
   if ($Picker -eq 'Forms') { $picked = Show-WindowPickerCheckbox -Items $all } elseif ($Picker -eq 'OGV') { $picked = $null } else { $picked = Show-WindowPickerCheckbox -Items $all }
-  if ($picked -ne $null) { return $picked }
+  if ($null -ne $picked) { return $picked }
 
   $ogv = Get-Command Out-GridView -ErrorAction SilentlyContinue
   if ($ogv) {
@@ -186,7 +186,7 @@ function Select-WindowsInteractive {
 
 function Get-AsciiSeparators { @(' - ', ' | ', ': ') }
 
-function Suggest-TitleLikeSimple([string]$title) {
+function Get-TitleSuggestion([string]$title) {
   if ([string]::IsNullOrWhiteSpace($title)) { return "" }
   foreach ($sep in (Get-AsciiSeparators)) {
     $idx = $title.IndexOf($sep)
@@ -196,7 +196,7 @@ function Suggest-TitleLikeSimple([string]$title) {
   return $title.Substring(0, [Math]::Min(20, $title.Length))
 }
 
-function Capture-Layout {
+function Save-WindowLayout {
   [CmdletBinding()]
   param(
     [ValidateSet('OGV', 'Forms', 'Console')][string]$Picker = 'OGV'
@@ -209,12 +209,12 @@ function Capture-Layout {
 
   $layout = @()
   foreach ($w in $picked) {
-    $default = Suggest-TitleLikeSimple $w.Title
-    $input = Read-Host ("TitleLike for '{0}' (Enter to accept: {1})" -f $w.Title, $default)
-    if ([string]::IsNullOrWhiteSpace($input)) { $input = $default }
+    $default = Get-TitleSuggestion $w.Title
+    $titleInput = Read-Host ("TitleLike for '{0}' (Enter to accept: {1})" -f $w.Title, $default)
+    if ([string]::IsNullOrWhiteSpace($titleInput)) { $titleInput = $default }
 
     $layout += [pscustomobject]@{
-      TitleLike = $input
+      TitleLike = $titleInput
       X         = [int]$w.X
       Y         = [int]$w.Y
       Width     = [int]$w.Width
@@ -244,7 +244,7 @@ function Capture-Layout {
   }
 }
 
-function Apply-Layout {
+function Restore-WindowLayout {
   [CmdletBinding()] param()
   $paths = @($script:LayoutPath)
   if (-not $paths -or $paths.Count -eq 0) {
@@ -295,8 +295,8 @@ function Export-WindowLayout {
   )
   $script:LayoutPath = $LayoutPath
   Enable-PerMonitorDpi
-  Capture-Layout -Picker $Picker
+  Save-WindowLayout -Picker $Picker
 }
 
 
-Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Export-WindowLayout, Apply-Layout
+Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Set-Window, Export-WindowLayout, Restore-WindowLayout

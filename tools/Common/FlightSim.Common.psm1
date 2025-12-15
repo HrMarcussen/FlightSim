@@ -85,40 +85,40 @@ function Enable-PerMonitorDpi {
 }
 
 function Get-OpenWindows {
-    [CmdletBinding()] param([switch]$VisibleOnly = $true)
+    [CmdletBinding()] param([switch]$IncludeHidden)
     $list = New-Object System.Collections.Generic.List[object]
     [FlightSim.Common.Win32Native]::EnumWindows({
-        param([IntPtr]$h, [IntPtr]$p)
-        if ($VisibleOnly -and -not [FlightSim.Common.Win32Native]::IsWindowVisible($h)) { return $true }
+            param([IntPtr]$h, [IntPtr]$p)
+            if ((-not $IncludeHidden) -and -not [FlightSim.Common.Win32Native]::IsWindowVisible($h)) { return $true }
     
-        $len = [FlightSim.Common.Win32Native]::GetWindowTextLength($h)
-        if ($len -le 0) { return $true }
-        $sb = New-Object System.Text.StringBuilder ($len + 1)
-        [void][FlightSim.Common.Win32Native]::GetWindowText($h, $sb, $sb.Capacity)
-        $title = $sb.ToString()
-        if ([string]::IsNullOrWhiteSpace($title)) { return $true }
+            $len = [FlightSim.Common.Win32Native]::GetWindowTextLength($h)
+            if ($len -le 0) { return $true }
+            $sb = New-Object System.Text.StringBuilder ($len + 1)
+            [void][FlightSim.Common.Win32Native]::GetWindowText($h, $sb, $sb.Capacity)
+            $title = $sb.ToString()
+            if ([string]::IsNullOrWhiteSpace($title)) { return $true }
     
-        $csb = New-Object System.Text.StringBuilder 256
-        [void][FlightSim.Common.Win32Native]::GetClassName($h, $csb, $csb.Capacity)
-        $class = $csb.ToString()
+            $csb = New-Object System.Text.StringBuilder 256
+            [void][FlightSim.Common.Win32Native]::GetClassName($h, $csb, $csb.Capacity)
+            $class = $csb.ToString()
     
-        [FlightSim.Common.Win32Native+RECT]$r = New-Object 'FlightSim.Common.Win32Native+RECT'
-        [void][FlightSim.Common.Win32Native]::GetWindowRect($h, [ref]$r)
-        $ww = [Math]::Max(0, $r.Right - $r.Left)
-        $hh = [Math]::Max(0, $r.Bottom - $r.Top)
-        if ($ww -le 0 -or $hh -le 0) { return $true }
-        $obj = [pscustomobject]@{
-            Handle = $h
-            Title  = $title
-            Class  = $class
-            X      = $r.Left
-            Y      = $r.Top
-            Width  = $ww
-            Height = $hh
-        }
-        $list.Add($obj) | Out-Null
-        return $true
-    }, [IntPtr]::Zero) | Out-Null
+            [FlightSim.Common.Win32Native+RECT]$r = New-Object 'FlightSim.Common.Win32Native+RECT'
+            [void][FlightSim.Common.Win32Native]::GetWindowRect($h, [ref]$r)
+            $ww = [Math]::Max(0, $r.Right - $r.Left)
+            $hh = [Math]::Max(0, $r.Bottom - $r.Top)
+            if ($ww -le 0 -or $hh -le 0) { return $true }
+            $obj = [pscustomobject]@{
+                Handle = $h
+                Title  = $title
+                Class  = $class
+                X      = $r.Left
+                Y      = $r.Top
+                Width  = $ww
+                Height = $hh
+            }
+            $list.Add($obj) | Out-Null
+            return $true
+        }, [IntPtr]::Zero) | Out-Null
     $list
 }
 
@@ -132,7 +132,8 @@ function Get-WindowRectByHandle {
         $hh = [Math]::Max(0, $r.Bottom - $r.Top)
         if ($ww -le 0 -or $hh -le 0) { return $null }
         return [pscustomobject]@{ X = $r.Left; Y = $r.Top; Width = $ww; Height = $hh }
-    } catch { return $null }
+    }
+    catch { return $null }
 }
 
 Export-ModuleMember -Function Enable-PerMonitorDpi, Get-OpenWindows, Get-WindowRectByHandle
